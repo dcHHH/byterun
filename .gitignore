@@ -1,0 +1,18 @@
+# IDE
+.idea/
+
+# python
+*.pyc
+local_config.py
+test.py
+__pycache__
+
+#macos
+*.DS_Store
+
+venv/*
+
+*.log
+venv/
+.vscode/
+
