@@ -1,10 +1,6 @@
 """Test functions etc, for Byterun."""
 
-from __future__ import print_function
 from . import vmtest
-import six
-
-PY3 = six.PY3
 
 
 class TestFunctions(vmtest.VmTestCase):
@@ -277,109 +273,108 @@ class TestGenerators(vmtest.VmTestCase):
             print(Thing().boom())
             """)
 
-    if PY3: # PY3.3+ only
-        def test_yield_from(self):
-            self.assert_ok("""\
-                def main():
-                    x = outer()
-                    next(x)
-                    y = x.send("Hello, World")
-                    print(y)
+    def test_yield_from(self):
+        self.assert_ok("""\
+            def main():
+                x = outer()
+                next(x)
+                y = x.send("Hello, World")
+                print(y)
 
-                def outer():
-                    yield from inner()
+            def outer():
+                yield from inner()
 
-                def inner():
-                    y = yield
-                    yield y
+            def inner():
+                y = yield
+                yield y
 
-                main()
-                """)
+            main()
+            """)
 
-        def test_yield_from_tuple(self):
-            self.assert_ok("""\
-                def main():
-                    for x in outer():
-                        print(x)
-
-                def outer():
-                    yield from (1, 2, 3, 4)
-
-                main()
-                """)
-
-        def test_distinguish_iterators_and_generators(self):
-            self.assert_ok("""\
-                class Foo(object):
-                    def __iter__(self):
-                        return FooIter()
-
-                class FooIter(object):
-                    def __init__(self):
-                        self.state = 0
-
-                    def __next__(self):
-                        if self.state >= 10:
-                            raise StopIteration
-                        self.state += 1
-                        return self.state
-
-                    def send(self, n):
-                        print("sending")
-
-                def outer():
-                    yield from Foo()
-
+    def test_yield_from_tuple(self):
+        self.assert_ok("""\
+            def main():
                 for x in outer():
                     print(x)
-                """)
 
-        def test_nested_yield_from(self):
-            self.assert_ok("""\
-                def main():
-                    x = outer()
-                    next(x)
-                    y = x.send("Hello, World")
-                    print(y)
+            def outer():
+                yield from (1, 2, 3, 4)
 
-                def outer():
-                    yield from middle()
-
-                def middle():
-                    yield from inner()
-
-                def inner():
-                    y = yield
-                    yield y
-
-                main()
-                """)
-
-        def test_return_from_generator(self):
-            self.assert_ok("""\
-                def gen():
-                    yield 1
-                    return 2
-
-                x = gen()
-                while True:
-                    try:
-                        print(next(x))
-                    except StopIteration as e:
-                        print(e.value)
-                        break
+            main()
             """)
 
-        def test_return_from_generator_with_yield_from(self):
-            self.assert_ok("""\
-                def returner():
-                    if False:
-                        yield
-                    return 1
+    def test_distinguish_iterators_and_generators(self):
+        self.assert_ok("""\
+            class Foo(object):
+                def __iter__(self):
+                    return FooIter()
 
-                def main():
-                    y = yield from returner()
-                    print(y)
+            class FooIter(object):
+                def __init__(self):
+                    self.state = 0
 
-                list(main())
+                def __next__(self):
+                    if self.state >= 10:
+                        raise StopIteration
+                    self.state += 1
+                    return self.state
+
+                def send(self, n):
+                    print("sending")
+
+            def outer():
+                yield from Foo()
+
+            for x in outer():
+                print(x)
             """)
+
+    def test_nested_yield_from(self):
+        self.assert_ok("""\
+            def main():
+                x = outer()
+                next(x)
+                y = x.send("Hello, World")
+                print(y)
+
+            def outer():
+                yield from middle()
+
+            def middle():
+                yield from inner()
+
+            def inner():
+                y = yield
+                yield y
+
+            main()
+            """)
+
+    def test_return_from_generator(self):
+        self.assert_ok("""\
+            def gen():
+                yield 1
+                return 2
+
+            x = gen()
+            while True:
+                try:
+                    print(next(x))
+                except StopIteration as e:
+                    print(e.value)
+                    break
+        """)
+
+    def test_return_from_generator_with_yield_from(self):
+        self.assert_ok("""\
+            def returner():
+                if False:
+                    yield
+                return 1
+
+            def main():
+                y = yield from returner()
+                print(y)
+
+            list(main())
+        """)

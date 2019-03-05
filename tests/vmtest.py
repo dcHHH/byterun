@@ -1,7 +1,5 @@
 """Testing tools for byterun."""
 
-from __future__ import print_function
-
 import dis
 import sys
 import textwrap
