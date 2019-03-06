@@ -2,7 +2,6 @@
 # Based on:
 # pyvm2 by Paul Swartz (z3p), from http://www.twistedmatrix.com/users/z3p/
 
-from __future__ import print_function, division
 import dis
 import inspect
 import linecache
@@ -44,10 +43,8 @@ class VirtualMachine(object):
 
     def pop(self, i=0):
         """Pop a value from the stack.
-
         Default to the top of the stack, but `i` can be a count from the top
         instead.
-
         """
         return self.frame.stack.pop(-1-i)
 
@@ -57,9 +54,7 @@ class VirtualMachine(object):
 
     def popn(self, n):
         """Pop a number of values from the value stack.
-
         A list of `n` values is returned, the deepest value first.
-
         """
         if n:
             ret = self.frame.stack[-n:]
@@ -86,11 +81,11 @@ class VirtualMachine(object):
 
     def make_frame(self, code, callargs=None, f_globals=None, f_locals=None):
         callargs = callargs if callargs else {}
-        log.info("make_frame: code=%r, callargs=%s" % (code, callargs))
-        if f_globals is not None:
-            f_globals = f_globals
-            if f_locals is None:
-                f_locals = f_globals
+        log.info(f"make_frame: code={code}, callargs={callargs}")
+        # 全局变量非空，局部变量为空时
+        if f_globals is not None and f_locals is None:
+            f_locals = f_globals
+        # 调用栈非空时
         elif self.frames:
             f_globals = self.frame.f_globals
             f_locals = {}
@@ -121,9 +116,7 @@ class VirtualMachine(object):
         for f in self.frames:
             filename = f.f_code.co_filename
             lineno = f.line_number()
-            print('  File "%s", line %d, in %s' % (
-                filename, lineno, f.f_code.co_name
-            ))
+            print(f'  File "{filename}", line {lineno}, in {f.f_code.co_name}')
             linecache.checkcache(filename)
             line = linecache.getline(filename, lineno, f.f_globals)
             if line:
@@ -135,14 +128,15 @@ class VirtualMachine(object):
         frame.f_back = None
         return val
 
+    # 入口点
     def run_code(self, code, f_globals=None, f_locals=None):
         frame = self.make_frame(code, f_globals=f_globals, f_locals=f_locals)
         val = self.run_frame(frame)
         # Check some invariants
-        if self.frames:            # pragma: no cover
+        if self.frames:                                 # pragma: no cover
             raise VirtualMachineError("Frames left over!")
         if self.frame and self.frame.stack:             # pragma: no cover
-            raise VirtualMachineError("Data left on stack! %r" % self.frame.stack)
+            raise VirtualMachineError(f"Data left on stack! {self.frame.stack}")
 
         return val
 
@@ -196,16 +190,16 @@ class VirtualMachine(object):
 
     def log(self, byteName, arguments, opoffset):
         """ Log arguments, block stack, and data stack for each opcode."""
-        op = "%d: %s" % (opoffset, byteName)
+        op = f"{opoffset}: {byteName}"
         if arguments:
-            op += " %r" % (arguments[0],)
+            op += f" {arguments[0]}"
         indent = "    "*(len(self.frames)-1)
         stack_rep = repper(self.frame.stack)
         block_stack_rep = repper(self.frame.block_stack)
 
-        log.info("  %sdata: %s" % (indent, stack_rep))
-        log.info("  %sblks: %s" % (indent, block_stack_rep))
-        log.info("%s%s" % (indent, op))
+        log.info(f"  {indent}data: {stack_rep}")
+        log.info(f"  {indent}blks: {block_stack_rep}")
+        log.info(f"{indent}{op}")
 
     def dispatch(self, byteName, arguments):
         """ Dispatch by bytename to the corresponding methods.
@@ -222,10 +216,10 @@ class VirtualMachine(object):
                 self.sliceOperator(byteName)
             else:
                 # dispatch
-                bytecode_fn = getattr(self, 'byte_%s' % byteName, None)
+                bytecode_fn = getattr(self, f'byte_{byteName}', None)
                 if not bytecode_fn:            # pragma: no cover
                     raise VirtualMachineError(
-                        "unknown bytecode type: %s" % byteName
+                        f"unknown bytecode type: {byteName}"
                     )
                 why = bytecode_fn(*arguments)
 
@@ -283,9 +277,7 @@ class VirtualMachine(object):
 
     def run_frame(self, frame):
         """Run a frame until it returns (somehow).
-
         Exceptions are raised, the return value is returned.
-
         """
         self.push_frame(frame)
         while True:
@@ -364,7 +356,7 @@ class VirtualMachine(object):
         elif name in frame.f_builtins:
             val = frame.f_builtins[name]
         else:
-            raise NameError("name '%s' is not defined" % name)
+            raise NameError(f"name '{name}' is not defined")
         self.push(val)
 
     def byte_STORE_NAME(self, name):
@@ -378,7 +370,7 @@ class VirtualMachine(object):
             val = self.frame.f_locals[name]
         else:
             raise UnboundLocalError(
-                "local variable '%s' referenced before assignment" % name
+                f"local variable '{name}' referenced before assignment"
             )
         self.push(val)
 
@@ -395,7 +387,7 @@ class VirtualMachine(object):
         elif name in f.f_builtins:
             val = f.f_builtins[name]
         else:
-            raise NameError("global name '%s' is not defined" % name)
+            raise NameError(f"global name '{name}' is not defined")
         self.push(val)
 
     def byte_STORE_GLOBAL(self, name):
@@ -473,7 +465,7 @@ class VirtualMachine(object):
         elif op == 'OR':
             x |= y
         else:           # pragma: no cover
-            raise VirtualMachineError("Unknown in-place operator: %r" % op)
+            raise VirtualMachineError(f"Unknown in-place operator: {op}")
         self.push(x)
 
     def sliceOperator(self, op):
@@ -881,12 +873,10 @@ class VirtualMachine(object):
             # The first parameter must be the correct type.
             if not isinstance(posargs[0], func.im_class):
                 raise TypeError(
-                    'unbound method %s() must be called with %s instance '
-                    'as first argument (got %s instance instead)' % (
-                        func.im_func.func_name,
-                        func.im_class.__name__,
-                        type(posargs[0]).__name__,
-                    )
+                    f'unbound method {func.im_func.func_name}() must '
+                    f'be called with {func.im_class.__name__} instance '
+                    f'as first argument (got {type(posargs[0]).__name__} '
+                    f'instance instead)'
                 )
             func = func.im_func
         retval = func(*posargs, **namedargs)

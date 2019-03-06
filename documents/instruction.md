@@ -37,9 +37,7 @@ CPython 使用三种类型的栈：
 3
 ```
 
-![interpreter-callstack](/Users/hdc/Documents/learning/code/byterun/原理/interpreter-callstack.png)
-
-
+![interpreter-callstack](/Users/hdc/Documents/learning/code/byterun/documents/interpreter-callstack.png)
 
 #对象类型
 
@@ -72,3 +70,39 @@ Special writable attributes: `f_trace`, if not `None`, is a function called at t
 ## `Coroutine`类
 
 协程对象
+
+# 前置知识
+
+## 字节码
+
+https://docs.python.org/3/reference/datamodel.html
+
+Special read-only attributes: 
+
+ `co_consts` is a tuple containing the literals used by the bytecode;
+
+ `co_names` is a tuple containing the names used by the bytecode;
+
+ `co_varnames` is a tuple containing the names of the local variables (starting with the argument names); 
+
+ `co_freevars`is a tuple containing the names of free variables;
+
+`co_name` gives the function name;
+
+ `co_argcount` is the number of positional arguments (including arguments with default values); 
+
+`co_nlocals` is the number of local variables used by the function (including arguments);
+
+`co_cellvars` is a tuple containing the names of local variables that are referenced by nested functions;
+
+ `co_code` is a string representing the sequence of bytecode instructions;
+
+ `co_filename` is the filename from which the code was compiled;
+
+ `co_firstlineno` is the first line number of the function;
+
+ `co_lnotab` is a string encoding the mapping from bytecode offsets to line numbers (for details see the source code of the interpreter);
+
+ `co_stacksize` is the required stack size (including local variables);
+
+ `co_flags` is an integer encoding a number of flags for the interpreter。

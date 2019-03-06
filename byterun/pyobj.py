@@ -40,9 +40,7 @@ class Function:
         self._func = types.FunctionType(code, globs, **kw)
 
     def __repr__(self):         # pragma: no cover
-        return '<Function %s at 0x%08x>' % (
-            self.func_name, id(self)
-        )
+        return f'<Function {self.func_name} at 0x{id(self):<8}>'
 
     def __get__(self, instance, owner):
         if instance is not None:
@@ -72,11 +70,11 @@ class Method:
         self.im_func = func
 
     def __repr__(self):         # pragma: no cover
-        name = "%s.%s" % (self.im_class.__name__, self.im_func.func_name)
+        name = f"{self.im_class.__name__}.{self.im_func.func_name}"
         if self.im_self is not None:
-            return '<Bound Method %s of %s>' % (name, self.im_self)
+            return f'<Bound Method {name} of {self.im_self}>'
         else:
-            return '<Unbound Method %s>' % (name,)
+            return f'<Unbound Method {name}s>'
 
     def __call__(self, *args, **kwargs):
         if self.im_self is not None:
@@ -150,16 +148,15 @@ class Frame:
                 self.cells = {}
             for var in f_code.co_freevars:
                 assert self.cells is not None
-                assert f_back.cells, "f_back.cells: %r" % (f_back.cells,)
+                assert f_back.cells, f"f_back.cells: {f_back.cells}"
                 self.cells[var] = f_back.cells[var]
 
         self.block_stack = []                       # 当前frame的块栈
         self.generator = None
 
     def __repr__(self):         # pragma: no cover
-        return '<Frame at 0x%08x: %r @ %d>' % (
-            id(self), self.f_code.co_filename, self.f_lineno
-        )
+        return f'<Frame at {id(self):<8}: ' \
+               f'{self.f_code.co_filename} @ {self.f_lineno}>'
 
     def line_number(self):
         """Get the current line number the frame is executing."""
