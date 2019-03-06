@@ -12,7 +12,7 @@ def make_cell(value):
     return fn.__closure__[0]
 
 
-class Function(object):
+class Function:
     __slots__ = [
         'func_code', 'func_name', 'func_defaults', 'func_globals',
         'func_locals', 'func_dict', 'func_closure',
@@ -65,7 +65,7 @@ class Function(object):
         return retval
 
 
-class Method(object):
+class Method:
     def __init__(self, obj, _class, func):
         self.im_self = obj
         self.im_class = _class
@@ -85,7 +85,7 @@ class Method(object):
             return self.im_func(*args, **kwargs)
 
 
-class Cell(object):
+class Cell:
     """A fake cell for closures.
 
     Closures keep names in scope by storing them not in a frame, but in a
@@ -117,22 +117,22 @@ class Cell(object):
 Block = collections.namedtuple("Block", "type, handler, level")
 
 
-class Frame(object):
+class Frame:
     def __init__(self, f_code, f_globals, f_locals, f_back):
-        self.f_code = f_code
-        self.f_globals = f_globals
-        self.f_locals = f_locals
-        self.f_back = f_back
-        self.stack = []
+        self.f_code = f_code                        # 当前frame被执行的code object
+        self.f_globals = f_globals                  # 当前frame的全局变量
+        self.f_locals = f_locals                    # 当前frame的局部变量
+        self.f_back = f_back                        # 当前frame之前的frame，如果当前frame位于栈底，则为空
+        self.stack = []                             # 当前frame的数据栈
         if f_back:
-            self.f_builtins = f_back.f_builtins
+            self.f_builtins = f_back.f_builtins     # 当前frame的内置变量
         else:
             self.f_builtins = f_locals['__builtins__']
             if hasattr(self.f_builtins, '__dict__'):
                 self.f_builtins = self.f_builtins.__dict__
 
-        self.f_lineno = f_code.co_firstlineno
-        self.f_lasti = 0
+        self.f_lineno = f_code.co_firstlineno       # 当前frame执行的具体行数（只针对栈底的frame）
+        self.f_lasti = 0                            # 当前frame中code object字符串的当前下标
 
         if f_code.co_cellvars:
             self.cells = {}
@@ -153,7 +153,7 @@ class Frame(object):
                 assert f_back.cells, "f_back.cells: %r" % (f_back.cells,)
                 self.cells[var] = f_back.cells[var]
 
-        self.block_stack = []
+        self.block_stack = []                       # 当前frame的块栈
         self.generator = None
 
     def __repr__(self):         # pragma: no cover
@@ -181,7 +181,7 @@ class Frame(object):
         return line_num
 
 
-class Generator(object):
+class Generator:
     def __init__(self, g_frame, vm):
         self.gi_frame = g_frame
         self.vm = vm
