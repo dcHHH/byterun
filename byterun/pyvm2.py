@@ -312,6 +312,8 @@ class VirtualMachine(object):
 
         return self.return_value
 
+    ### bytecode instructions
+
     ## Stack manipulation
 
     def byte_LOAD_CONST(self, const):
@@ -329,7 +331,6 @@ class VirtualMachine(object):
             self.push(*items)
 
     def byte_DUP_TOP_TWO(self):
-        # Py3 only
         a, b = self.popn(2)
         self.push(a, b, a, b)
 
@@ -405,11 +406,12 @@ class VirtualMachine(object):
 
     ## Operators
 
+    # Unary operations take the top of the stack,
+    # apply the operation, and push the result back on the stack.
     UNARY_OPERATORS = {
         'POSITIVE': operator.pos,
         'NEGATIVE': operator.neg,
         'NOT':      operator.not_,
-        'CONVERT':  repr,
         'INVERT':   operator.invert,
     }
 
@@ -417,34 +419,53 @@ class VirtualMachine(object):
         x = self.pop()
         self.push(self.UNARY_OPERATORS[op](x))
 
+    def byte_GET_ITER(self):
+        self.push(iter(self.pop()))
+
+    def byte_GET_YIELD_FROM_ITER(self):
+        if not (inspect.isgenerator(self.top()) or
+                inspect.iscoroutine(self.top())):
+            self.push(iter(self.pop()))
+
+    # Binary operations remove
+    # the top of the stack (TOS) and
+    # the second top-most stack item (TOS1) from the stack.
+    # They perform the operation, and put the result back on the stack.
     BINARY_OPERATORS = {
-        'POWER':    pow,
-        'MULTIPLY': operator.mul,
-        'DIVIDE':   getattr(operator, 'div', lambda x, y: None),
-        'FLOOR_DIVIDE': operator.floordiv,
-        'TRUE_DIVIDE':  operator.truediv,
-        'MODULO':   operator.mod,
-        'ADD':      operator.add,
-        'SUBTRACT': operator.sub,
-        'SUBSCR':   operator.getitem,
-        'LSHIFT':   operator.lshift,
-        'RSHIFT':   operator.rshift,
-        'AND':      operator.and_,
-        'XOR':      operator.xor,
-        'OR':       operator.or_,
+        'POWER':            pow,
+        'MULTIPLY':         operator.mul,
+        'MATRIX_MULTIPLY':  operator.matmul,
+        'FLOOR_DIVIDE':     operator.floordiv,
+        'TRUE_DIVIDE':      operator.truediv,
+        'MODULO':           operator.mod,
+        'ADD':              operator.add,
+        'SUBTRACT':         operator.sub,
+        'SUBSCR':           operator.getitem,
+        'LSHIFT':           operator.lshift,
+        'RSHIFT':           operator.rshift,
+        'AND':              operator.and_,
+        'XOR':              operator.xor,
+        'OR':               operator.or_,
     }
 
     def binaryOperator(self, op):
         x, y = self.popn(2)
         self.push(self.BINARY_OPERATORS[op](x, y))
 
+    # In-place operations are like binary operations,
+    # in that they remove TOS and TOS1,
+    # and push the result back on the stack,
+    # but the operation is done in-place when TOS1 supports it,
+    # and the resulting TOS may be (but does not have to be) the original TOS1.
     def inplaceOperator(self, op):
         x, y = self.popn(2)
         if op == 'POWER':
             x **= y
         elif op == 'MULTIPLY':
             x *= y
-        elif op in ['DIVIDE', 'FLOOR_DIVIDE']:
+        elif op == 'MATRIX_MULTIPLY':
+            x @= y
+        elif op in 'FLOOR_DIVIDE':
             x //= y
         elif op == 'TRUE_DIVIDE':
             x /= y
@@ -468,6 +489,15 @@ class VirtualMachine(object):
             raise VirtualMachineError(f"Unknown in-place operator: {op}")
         self.push(x)
 
+    def byte_STORE_SUBSCR(self):
+        val, obj, subscr = self.popn(3)
+        obj[subscr] = val
+
+    def byte_DELETE_SUBSCR(self):
+        obj, subscr = self.popn(2)
+        del obj[subscr]
+
+
     def sliceOperator(self, op):
         start = 0
         end = None          # we will take this to mean end
@@ -489,6 +519,14 @@ class VirtualMachine(object):
         else:
             self.push(l[start:end])
 
+    # Performs a Boolean operation.
+    # The operation name can be found in cmp_op[opname]
+    def byte_COMPARE_OP(self, opnum):
+        x, y = self.popn(2)
+        self.push(self.COMPARE_OPERATORS[opnum](x, y))
+
+    # cmp_op = ('<', '<=', '==', '!=', '>', '>=', 'in', 'not in', 'is',
+    #           'is not', 'exception match', 'BAD')
     COMPARE_OPERATORS = [
         operator.lt,
         operator.le,
@@ -502,10 +540,6 @@ class VirtualMachine(object):
         lambda x, y: x is not y,
         lambda x, y: issubclass(x, Exception) and issubclass(x, y),
     ]
-
-    def byte_COMPARE_OP(self, opnum):
-        x, y = self.popn(2)
-        self.push(self.COMPARE_OPERATORS[opnum](x, y))
 
     ## Attributes and indexing
 
@@ -522,14 +556,6 @@ class VirtualMachine(object):
         obj = self.pop()
         delattr(obj, name)
 
-    def byte_STORE_SUBSCR(self):
-        val, obj, subscr = self.popn(3)
-        obj[subscr] = val
-
-    def byte_DELETE_SUBSCR(self):
-        obj, subscr = self.popn(2)
-        del obj[subscr]
-
     ## Building
 
     def byte_BUILD_TUPLE(self, count):
@@ -541,13 +567,18 @@ class VirtualMachine(object):
         self.push(elts)
 
     def byte_BUILD_SET(self, count):
-        # TODO: Not documented in Py2 docs.
         elts = self.popn(count)
         self.push(set(elts))
 
-    def byte_BUILD_MAP(self, size):
-        # size is ignored.
-        self.push({})
+    # Pushes a new dictionary object onto the stack.
+    # Pops 2 * count items
+    # so that the dictionary holds count entries:
+    # {..., TOS3: TOS2, TOS1: TOS}.
+    def byte_BUILD_MAP(self, count):
+        map_args = self.popn(2 * count)
+        the_map = {map_args[i]: map_args[i + 1]
+                   for i in range(0, len(map_args), 2)}
+        self.push(the_map)
 
     def byte_STORE_MAP(self):
         the_map, val, key = self.popn(3)
@@ -584,11 +615,62 @@ class VirtualMachine(object):
         the_map = self.peek(count)
         the_map[key] = val
 
+    # The version of BUILD_MAP specialized for constant keys.
+    # count values are consumed from the stack.
+    # The top element on the stack contains a tuple of keys.
+    def byte_BUILD_CONST_KEY_MAP(self, count):
+        pass
+
+    # Concatenates count strings from the stack and
+    # pushes the resulting string onto the stack.
+    # what make f-string faster
+    def byte_BUILD_STRING(self, count):
+        string_arg = self.popn(count)
+        self.push(''.join(string_arg))
+
+    # Pops count iterables from the stack,
+    # joins them in a single tuple, and pushes the result.
+    # Implements iterable unpacking in tuple displays (*x, *y, *z).
+    def byte_BUILD_TUPLE_UNPACK(self, count):
+        pass
+
+    # This is similar to BUILD_TUPLE_UNPACK,
+    # but is used for f(*x, *y, *z) call syntax.
+    # The stack item at position count + 1
+    # should be the corresponding callable f.
+    def byte_BUILD_TUPLE_UNPACK_WITH_CALL(self, count):
+        pass
+
+    # This is similar to BUILD_TUPLE_UNPACK,
+    # but pushes a list instead of tuple.
+    # Implements iterable unpacking in list displays [*x, *y, *z].
+    def byte_BUILD_LIST_UNPACKP(self, count):
+        pass
+
+    # This is similar to BUILD_TUPLE_UNPACK,
+    # but pushes a set instead of tuple.
+    # Implements iterable unpacking in set displays {*x, *y, *z}.
+    def byte_BUILD_SET_UNPACK(self, count):
+        pass
+
+    # Pops count mappings from the stack,
+    # merges them into a single dictionary, and pushes the result.
+    # Implements dictionary unpacking in dictionary displays {**x, **y, **z}.
+    def byte_BUILD_MAP_UNPACK(self, count):
+        pass
+
+    # This is similar to BUILD_MAP_UNPACK,
+    # but is used for f(**x, **y, **z) call syntax.
+    # The stack item at position count + 2
+    # should be the corresponding callable f.
+    def byte_BUILD_MAP_UNPACK_WITH_CALL(self, count):
+        pass
+
     ## Printing
 
-    if 0:   # Only used in the interactive interpreter, not in modules.
-        def byte_PRINT_EXPR(self):
-            print(self.pop())
+    # Only used in the interactive interpreter, not in modules.
+    def byte_PRINT_EXPR(self):
+        print(self.pop())
 
     def byte_PRINT_ITEM(self):
         item = self.pop()
@@ -672,9 +754,6 @@ class VirtualMachine(object):
 
     def byte_SETUP_LOOP(self, dest):
         self.push_block('loop', dest)
-
-    def byte_GET_ITER(self):
-        self.push(iter(self.pop()))
 
     def byte_FOR_ITER(self, jump):
         iterobj = self.top()
@@ -934,6 +1013,37 @@ class VirtualMachine(object):
         mod = self.top()
         self.push(getattr(mod, name))
 
+    # Coroutine opcodes
+
+    # Implements TOS = get_awaitable(TOS),
+    # where get_awaitable(o) returns o
+    # if o is a coroutine object or
+    # a generator object with the CO_ITERABLE_COROUTINE flag,
+    # or resolves o.__await__.
+    def byte_GET_AWAITABLE(self):
+        pass
+
+    # Implements TOS = get_awaitable(TOS.__aiter__())
+    def byte_GET_AITER(self):
+        pass
+
+    # Implements PUSH(get_awaitable(TOS.__anext__()))
+    def byte_GET_ANEXT(self):
+        pass
+
+    # Resolves __aenter__ and __aexit__
+    # from the object on top of the stack.
+    # Pushes __aexit__ and result of __aenter__() to the stack.
+    def byte_BEFORE_ASYNC_WITH(self):
+        pass
+
+    # Creates a new frame object.
+    def byte_SETUP_ASYNC_WITH(self):
+        pass
+
+
+
+
     ## And the rest...
 
     def byte_EXEC_STMT(self):
@@ -950,3 +1060,30 @@ class VirtualMachine(object):
     # Not in py2.7
     def byte_SET_LINENO(self, lineno):
         self.frame.f_lineno = lineno
+
+    # Used for implementing formatted literal strings (f-strings).
+    # Pops an optional fmt_spec from the stack,
+    # then a required value.
+    # Formatting is performed using PyObject_Format().
+    # The result is pushed on the stack.
+
+    # flags is interpreted as follows:
+    # (flags & 0x03) == 0x00: value is formatted as-is.
+    # (flags & 0x03) == 0x01: call str() on value before formatting it.
+    # (flags & 0x03) == 0x02: call repr() on value before formatting it.
+    # (flags & 0x03) == 0x03: call ascii() on value before formatting it.
+    # (flags & 0x04) == 0x04: pop fmt_spec from the stack and use it, else use an empty fmt_spec.
+    def byte_FORMAT_VALUE(self, flags):
+        str_2_push = ''
+        if (flags & 0x03) == 0x00:
+            str_2_push = self.pop()
+        elif (flags & 0x03) == 0x01:
+            str_2_push = str(self.pop())
+        elif (flags & 0x03) == 0x02:
+            str_2_push = repr(self.pop())
+        elif (flags & 0x03) == 0x03:
+            str_2_push = ascii(self.pop())
+        elif (flags & 0x04) == 0x04:
+            fmt_spec = self.pop()
+            str_2_push = fmt_spec.format(self.pop())
+        self.push(str_2_push)

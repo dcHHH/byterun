@@ -7,6 +7,16 @@ class TestIt(vmtest.VmTestCase):
     def test_constant(self):
         self.assert_ok("17")
 
+    def test_dict(self):
+        self.assert_ok("""\
+        a = {'x': 1}
+        print(a['x'] == 1)""")
+
+    def test_f_string(self):
+        self.assert_ok("""\
+        foo = 'foo'
+        print(f'foo is {foo}')""")
+
     def test_globals(self):
         self.assert_ok("""\
             global xyz
