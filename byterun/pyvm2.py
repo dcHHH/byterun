@@ -598,7 +598,7 @@ class VirtualMachine(object):
             x, y, z = self.popn(3)
             self.push(slice(x, y, z))
         else:           # pragma: no cover
-            raise VirtualMachineError("Strange BUILD_SLICE count: %r" % count)
+            raise VirtualMachineError(f"Strange BUILD_SLICE count: {count}")
 
     def byte_LIST_APPEND(self, count):
         val = self.pop()
@@ -619,7 +619,10 @@ class VirtualMachine(object):
     # count values are consumed from the stack.
     # The top element on the stack contains a tuple of keys.
     def byte_BUILD_CONST_KEY_MAP(self, count):
-        pass
+        map_keys = self.pop()
+        map_vals = self.popn(count)
+        the_map = {k: v for k, v in zip(map_keys, map_vals)}
+        self.push(the_map)
 
     # Concatenates count strings from the stack and
     # pushes the resulting string onto the stack.
@@ -632,7 +635,11 @@ class VirtualMachine(object):
     # joins them in a single tuple, and pushes the result.
     # Implements iterable unpacking in tuple displays (*x, *y, *z).
     def byte_BUILD_TUPLE_UNPACK(self, count):
-        pass
+        elts = self.popn(count)
+        list_2_push = []
+        for i in elts:
+            list_2_push += list(i)
+        self.push(tuple(list_2_push))
 
     # This is similar to BUILD_TUPLE_UNPACK,
     # but is used for f(*x, *y, *z) call syntax.
@@ -644,14 +651,22 @@ class VirtualMachine(object):
     # This is similar to BUILD_TUPLE_UNPACK,
     # but pushes a list instead of tuple.
     # Implements iterable unpacking in list displays [*x, *y, *z].
-    def byte_BUILD_LIST_UNPACKP(self, count):
-        pass
+    def byte_BUILD_LIST_UNPACK(self, count):
+        elts = self.popn(count)
+        list_2_push = []
+        for i in elts:
+            list_2_push += list(i)
+        self.push(list_2_push)
 
     # This is similar to BUILD_TUPLE_UNPACK,
     # but pushes a set instead of tuple.
     # Implements iterable unpacking in set displays {*x, *y, *z}.
     def byte_BUILD_SET_UNPACK(self, count):
-        pass
+        elts = self.popn(count)
+        set_2_push = set()
+        for i in elts:
+            set_2_push.update(set(i))
+        self.push(set_2_push)
 
     # Pops count mappings from the stack,
     # merges them into a single dictionary, and pushes the result.
@@ -909,30 +924,14 @@ class VirtualMachine(object):
     def byte_LOAD_CLOSURE(self, name):
         self.push(self.frame.cells[name])
 
-    def byte_MAKE_CLOSURE(self, argc):
-        # TODO: the py3 docs don't mention this change.
-        name = self.pop()
-        closure, code = self.popn(2)
-        defaults = self.popn(argc)
-        globs = self.frame.f_globals
-        fn = Function(name, code, globs, defaults, closure, self)
-        self.push(fn)
-
     def byte_CALL_FUNCTION(self, arg):
         return self.call_function(arg, [], {})
-
-    def byte_CALL_FUNCTION_VAR(self, arg):
-        args = self.pop()
-        return self.call_function(arg, args, {})
 
     def byte_CALL_FUNCTION_KW(self, arg):
         kwargs = self.pop()
         return self.call_function(arg, [], kwargs)
 
-    def byte_CALL_FUNCTION_VAR_KW(self, arg):
-        args, kwargs = self.popn(2)
-        return self.call_function(arg, args, kwargs)
-
+    # 待修改，Python3中未绑定方法改为普通函数
     def call_function(self, arg, args, kwargs):
         lenKw, lenPos = divmod(arg, 256)
         namedargs = {}
@@ -1040,8 +1039,6 @@ class VirtualMachine(object):
     # Creates a new frame object.
     def byte_SETUP_ASYNC_WITH(self):
         pass
-
-
 
 
     ## And the rest...

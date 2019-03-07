@@ -462,6 +462,21 @@ class TestIt(vmtest.VmTestCase):
             assert c == 3
             """)
 
+    def test_build_unpacking(self):
+        self.assert_ok("""\
+            a = (*[1, 2], *[3, 4])
+            print(a)
+            """)
+        self.assert_ok("""\
+            [*[1, 2], *[3, 4]]
+            """)
+        self.assert_ok("""\
+            {*[1, 2], *[3, 4]}
+            """)
+        # self.assert_ok("""\
+        #     {**{1: 2}, **{3: 4}}
+        #     """)
+
     def test_exec_statement(self):
         self.assert_ok("""\
             g = {}
