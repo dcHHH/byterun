@@ -50,6 +50,16 @@ class Function:
 
     def __call__(self, *args, **kwargs):
         callargs = inspect.getcallargs(self._func, *args, **kwargs)
+
+        # class inspect.Parameter
+        # CPython generates implicit parameter names of the form .0
+        # on the code objects used to implement comprehensions
+        # and generator expressions.
+        # Changed in version 3.6: These parameter names are
+        # exposed by this module as names like implicit0.
+        if 'implicit0' in callargs:
+            callargs['.0'] = callargs['implicit0']
+
         frame = self._vm.make_frame(
             self.func_code, callargs, self.func_globals, {}
         )

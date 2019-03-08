@@ -473,9 +473,9 @@ class TestIt(vmtest.VmTestCase):
         self.assert_ok("""\
             {*[1, 2], *[3, 4]}
             """)
-        # self.assert_ok("""\
-        #     {**{1: 2}, **{3: 4}}
-        #     """)
+        self.assert_ok("""\
+            {**{1: 2}, **{3: 4}}
+            """)
 
     def test_exec_statement(self):
         self.assert_ok("""\

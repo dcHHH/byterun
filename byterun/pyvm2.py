@@ -672,7 +672,11 @@ class VirtualMachine(object):
     # merges them into a single dictionary, and pushes the result.
     # Implements dictionary unpacking in dictionary displays {**x, **y, **z}.
     def byte_BUILD_MAP_UNPACK(self, count):
-        pass
+        elts = self.popn(count)
+        map_2_push = {}
+        for i in elts:
+            map_2_push.update(i)
+        self.push(map_2_push)
 
     # This is similar to BUILD_MAP_UNPACK,
     # but is used for f(**x, **y, **z) call syntax.
