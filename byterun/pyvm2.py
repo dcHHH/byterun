@@ -497,7 +497,6 @@ class VirtualMachine(object):
         obj, subscr = self.popn(2)
         del obj[subscr]
 
-
     def sliceOperator(self, op):
         start = 0
         end = None          # we will take this to mean end
@@ -928,23 +927,37 @@ class VirtualMachine(object):
     def byte_LOAD_CLOSURE(self, name):
         self.push(self.frame.cells[name])
 
-    def byte_CALL_FUNCTION(self, arg):
+    # def byte_CALL_FUNCTION(self, argc):
+    #     return self.call_function(argc, [], {})
+    #
+    # def byte_CALL_FUNCTION_KW(self, arg):
+    #     kwargs = self.pop()
+    #     return self.call_function(arg, [], kwargs)
+
+    def byte_CALL_FUNCTION(self, argc):
+        arg = self.popn(argc)
         return self.call_function(arg, [], {})
 
-    def byte_CALL_FUNCTION_KW(self, arg):
-        kwargs = self.pop()
+    def byte_CALL_FUNCTION_KW(self, argc):
+        kwargs_keys = self.pop()
+        kwargs_values = self.popn(len(kwargs_keys))
+        kwargs = {kwargs_key: kwargs_val
+                  for kwargs_key, kwargs_val in
+                  zip(kwargs_keys, kwargs_values)}
+        arg = self.pop(argc - len(kwargs_keys))
         return self.call_function(arg, [], kwargs)
 
     # 待修改，Python3中未绑定方法改为普通函数
     def call_function(self, arg, args, kwargs):
-        lenKw, lenPos = divmod(arg, 256)
-        namedargs = {}
-        for i in range(lenKw):
-            key, val = self.popn(2)
-            namedargs[key] = val
-        namedargs.update(kwargs)
-        posargs = self.popn(lenPos)
-        posargs.extend(args)
+        # lenKw, lenPos = divmod(arg, 256)
+        # namedargs = {}
+        # for i in range(lenKw):
+        #     key, val = self.popn(2)
+        #     namedargs[key] = val
+        # namedargs.update(kwargs)
+        # posargs = self.popn(lenPos)
+        # posargs.extend(args)
+        posargs, namedargs = arg, kwargs
 
         func = self.pop()
         frame = self.frame
@@ -1046,6 +1059,15 @@ class VirtualMachine(object):
 
 
     ## And the rest...
+    # Prefixes any opcode which has an argument too big
+    # to fit into the default two bytes.
+    # ext holds two additional bytes which,
+    # taken together with the subsequent opcode’s argument,
+    # comprise a four-byte argument,
+    # ext being the two most-significant bytes.
+    def byte_EXTENDED_ARG(self, ext):
+        # self.push(ext*256 + self.pop())
+        pass
 
     def byte_EXEC_STMT(self):
         stmt, globs, locs = self.popn(3)
