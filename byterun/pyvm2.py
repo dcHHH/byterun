@@ -11,7 +11,7 @@ import six
 from six.moves import reprlib
 
 from byterun.instruction import VirtualMachine_instruction, VirtualMachineError
-from byterun.pyobj import Frame, Block, Method, Function, Generator
+from byterun.pyobj import Frame
 
 log = logging.getLogger(__name__)
 
@@ -26,7 +26,7 @@ class VirtualMachine(VirtualMachine_instruction):
     def __init__(self):
         super().__init__()
 
-    def make_frame(self, code, callargs=None, f_globals=None, f_locals=None):
+    def make_frame(self, code, callargs=None, f_globals=None, f_locals=None, f_closure=None):
         callargs = callargs if callargs else {}
         log.info(f"make_frame: code={code}, callargs={callargs}")
         # 全局变量非空，局部变量为空时
@@ -44,7 +44,7 @@ class VirtualMachine(VirtualMachine_instruction):
                 '__package__': None,
             }
         f_locals.update(callargs)
-        frame = Frame(code, f_globals, f_locals, self.frame)
+        frame = Frame(code, f_globals, f_locals, f_closure, self.frame)
         return frame
 
     def push_frame(self, frame):

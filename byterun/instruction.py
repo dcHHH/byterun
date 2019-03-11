@@ -3,9 +3,8 @@ import operator
 import sys
 
 import six
-from six.moves import reprlib
 
-from byterun.pyobj import Block, Method, Function, Generator
+from byterun.pyobj import Block, Method, Function, Generator, Cell
 
 
 class VirtualMachineError(Exception):
@@ -445,37 +444,29 @@ class VirtualMachine_instruction:
     # Implements iterable unpacking in tuple displays (*x, *y, *z).
     def byte_BUILD_TUPLE_UNPACK(self, count):
         elts = self.popn(count)
-        list_2_push = []
-        for i in elts:
-            list_2_push += list(i)
-        self.push(tuple(list_2_push))
+        self.push(tuple(j for i in elts for j in i))
 
     # This is similar to BUILD_TUPLE_UNPACK,
     # but is used for f(*x, *y, *z) call syntax.
     # The stack item at position count + 1
     # should be the corresponding callable f.
     def byte_BUILD_TUPLE_UNPACK_WITH_CALL(self, count):
-        pass
+        elts = self.popn(count)
+        self.push(tuple(j for i in elts for j in i))
 
     # This is similar to BUILD_TUPLE_UNPACK,
     # but pushes a list instead of tuple.
     # Implements iterable unpacking in list displays [*x, *y, *z].
     def byte_BUILD_LIST_UNPACK(self, count):
         elts = self.popn(count)
-        list_2_push = []
-        for i in elts:
-            list_2_push += list(i)
-        self.push(list_2_push)
+        self.push(list(j for i in elts for j in i))
 
     # This is similar to BUILD_TUPLE_UNPACK,
     # but pushes a set instead of tuple.
     # Implements iterable unpacking in set displays {*x, *y, *z}.
     def byte_BUILD_SET_UNPACK(self, count):
         elts = self.popn(count)
-        set_2_push = set()
-        for i in elts:
-            set_2_push.update(set(i))
-        self.push(set_2_push)
+        self.push(set(j for i in elts for j in i))
 
     # Pops count mappings from the stack,
     # merges them into a single dictionary, and pushes the result.
@@ -492,7 +483,11 @@ class VirtualMachine_instruction:
     # The stack item at position count + 2
     # should be the corresponding callable f.
     def byte_BUILD_MAP_UNPACK_WITH_CALL(self, count):
-        pass
+        elts = self.popn(count)
+        map_2_push = {}
+        for i in elts:
+            map_2_push.update(i)
+        self.push(map_2_push)
 
     ## Printing
 
@@ -726,12 +721,27 @@ class VirtualMachine_instruction:
 
     ## Functions
 
+    # Pushes a new function object on the stack.
+    # From bottom to top,
+    # the consumed stack must consist of values
+    # if the argument carries a specified flag value
+
+    # 0x01 a tuple of default values for positional-only
+    # and positional-or-keyword parameters in positional order
+    # 0x02 a dictionary of keyword-only parameters’ default values
+    # 0x04 an annotation dictionary
+    # 0x08 a tuple containing cells for free variables, making a closure
+    # the code associated with the function (at TOS1)
+    # the qualified name of the function (at TOS)
     def byte_MAKE_FUNCTION(self, argc):
         name = self.pop()
         code = self.pop()
-        defaults = self.popn(argc)
         globs = self.frame.f_globals
-        fn = Function(name, code, globs, defaults, None, self)
+        closure = self.pop() if (argc & 0x8) else None
+        ann = self.pop() if (argc & 0x4) else None
+        kwdefaults = self.pop() if (argc & 0x02) else None
+        defaults = self.pop() if (argc & 0x01) else None
+        fn = Function(name, code, globs, defaults, kwdefaults, closure, self)
         self.push(fn)
 
     def byte_LOAD_CLOSURE(self, name):
@@ -767,22 +777,15 @@ class VirtualMachine_instruction:
         # namedargs.update(kwargs)
         # posargs = self.popn(lenPos)
         # posargs.extend(args)
-        posargs, namedargs = arg, kwargs
+        posargs, namedargs = arg + args, kwargs
 
         func = self.pop()
         frame = self.frame
+        # 属性
         if hasattr(func, 'im_func'):
             # Methods get self as an implicit first parameter.
             if func.im_self:
                 posargs.insert(0, func.im_self)
-            # The first parameter must be the correct type.
-            if not isinstance(posargs[0], func.im_class):
-                raise TypeError(
-                    f'unbound method {func.im_func.func_name}() must '
-                    f'be called with {func.im_class.__name__} instance '
-                    f'as first argument (got {type(posargs[0]).__name__} '
-                    f'instance instead)'
-                )
             func = func.im_func
         retval = func(*posargs, **namedargs)
         self.push(retval)
@@ -885,7 +888,7 @@ class VirtualMachine_instruction:
 
     def byte_LOAD_BUILD_CLASS(self):
         # New in py3
-        self.push(__build_class__)
+        self.push(build_class)
 
     def byte_STORE_LOCALS(self):
         self.frame.f_locals = self.pop()
@@ -920,3 +923,52 @@ class VirtualMachine_instruction:
             fmt_spec = self.pop()
             str_2_push = fmt_spec.format(self.pop())
         self.push(str_2_push)
+
+
+def build_class(func, name, *bases, **kwds):
+    "Like __build_class__ in bltinmodule.c, but running in the byterun VM."
+    if not isinstance(func, Function):
+        raise TypeError("func must be a function")
+    if not isinstance(name, str):
+        raise TypeError("name is not a string")
+    metaclass = kwds.pop('metaclass', None)
+    # (We don't just write 'metaclass=None' in the signature above
+    # because that's a syntax error in Py2.)
+    if metaclass is None:
+        metaclass = type(bases[0]) if bases else type
+    if isinstance(metaclass, type):
+        metaclass = calculate_metaclass(metaclass, bases)
+
+    try:
+        prepare = metaclass.__prepare__
+    except AttributeError:
+        namespace = {}
+    else:
+        namespace = prepare(name, bases, **kwds)
+
+    # Execute the body of func. This is the step that would go wrong if
+    # we tried to use the built-in __build_class__, because __build_class__
+    # does not call func, it magically executes its body directly, as we
+    # do here (except we invoke our VirtualMachine instead of CPython's).
+    frame = func._vm.make_frame(func.func_code,
+                                f_globals=func.func_globals,
+                                f_locals=namespace,
+                                f_closure=func.func_closure)
+    cell = func._vm.run_frame(frame)
+
+    cls = metaclass(name, bases, namespace)
+    if isinstance(cell, Cell):
+        cell.set(cls)
+    return cls
+
+
+def calculate_metaclass(metaclass, bases):
+    "Determine the most derived metatype."
+    winner = metaclass
+    for base in bases:
+        t = type(base)
+        if issubclass(t, winner):
+            winner = t
+        elif not issubclass(winner, t):
+            raise TypeError("metaclass conflict", winner, t)
+    return winner

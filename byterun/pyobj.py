@@ -20,11 +20,11 @@ class Function:
         '_vm', '_func',
     ]
 
-    def __init__(self, name, code, globs, defaults, closure, vm):
+    def __init__(self, name, code, globs, defaults, kwdefaults, closure, vm):
         self._vm = vm
         self.func_code = code
         self.func_name = self.__name__ = name or code.co_name
-        self.func_defaults = tuple(defaults)
+        self.func_defaults = defaults
         self.func_globals = globs
         self.func_locals = self._vm.frame.f_locals
         self.__dict__ = {}
@@ -73,6 +73,7 @@ class Function:
         return retval
 
 
+# Unbound Method在Python3中改为普通函数
 class Method:
     def __init__(self, obj, _class, func):
         self.im_self = obj
@@ -81,16 +82,10 @@ class Method:
 
     def __repr__(self):         # pragma: no cover
         name = f"{self.im_class.__name__}.{self.im_func.func_name}"
-        if self.im_self is not None:
-            return f'<Bound Method {name} of {self.im_self}>'
-        else:
-            return f'<Unbound Method {name}s>'
+        return f'<Bound Method {name} of {self.im_self}>'
 
     def __call__(self, *args, **kwargs):
-        if self.im_self is not None:
-            return self.im_func(self.im_self, *args, **kwargs)
-        else:
-            return self.im_func(*args, **kwargs)
+        return self.im_func(self.im_self, *args, **kwargs)
 
 
 class Cell:
@@ -126,7 +121,7 @@ Block = collections.namedtuple("Block", "type, handler, level")
 
 
 class Frame:
-    def __init__(self, f_code, f_globals, f_locals, f_back):
+    def __init__(self, f_code, f_globals, f_locals, f_closure, f_back):
         self.f_code = f_code                        # 当前frame被执行的code object
         self.f_globals = f_globals                  # 当前frame的全局变量
         self.f_locals = f_locals                    # 当前frame的局部变量
@@ -142,24 +137,32 @@ class Frame:
         self.f_lineno = f_code.co_firstlineno       # 当前frame执行的具体行数（只针对栈底的frame）
         self.f_lasti = 0                            # 当前frame中code object字符串的当前下标
 
-        if f_code.co_cellvars:
-            self.cells = {}
-            if not f_back.cells:
-                f_back.cells = {}
-            for var in f_code.co_cellvars:
-                # Make a cell for the variable in our locals, or None.
-                cell = Cell(self.f_locals.get(var))
-                f_back.cells[var] = self.cells[var] = cell
-        else:
-            self.cells = None
+        # if f_code.co_cellvars:
+        #     self.cells = {}
+        #     if not f_back.cells:
+        #         f_back.cells = {}
+        #     for var in f_code.co_cellvars:
+        #         # Make a cell for the variable in our locals, or None.
+        #         cell = Cell(self.f_locals.get(var))
+        #         f_back.cells[var] = self.cells[var] = cell
+        # else:
+        #     self.cells = None
+        #
+        # if f_code.co_freevars:
+        #     if not self.cells:
+        #         self.cells = {}
+        #     for var in f_code.co_freevars:
+        #         assert self.cells is not None
+        #         assert f_back.cells, f"f_back.cells: {f_back.cells}"
+        #         self.cells[var] = f_back.cells[var]
 
+        self.cells = {} if f_code.co_cellvars or f_code.co_freevars else None
+        for var in f_code.co_cellvars:
+            # Make a cell for the variable in our locals, or None.
+            self.cells[var] = Cell(self.f_locals.get(var))
         if f_code.co_freevars:
-            if not self.cells:
-                self.cells = {}
-            for var in f_code.co_freevars:
-                assert self.cells is not None
-                assert f_back.cells, f"f_back.cells: {f_back.cells}"
-                self.cells[var] = f_back.cells[var]
+            assert len(f_code.co_freevars) == len(f_closure)
+            self.cells.update(zip(f_code.co_freevars, f_closure))
 
         self.block_stack = []                       # 当前frame的块栈
         self.generator = None

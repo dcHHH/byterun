@@ -17,12 +17,6 @@ class TestIt(vmtest.VmTestCase):
         foo = 'foo'
         print(f'foo is {foo}')""")
 
-    def test_f_(self):
-        self.assert_ok("""\
-        def f(x, y=1):
-            print(x, y)
-        f(2)""")
-
     def test_globals(self):
         self.assert_ok("""\
             global xyz
