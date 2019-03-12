@@ -82,6 +82,7 @@ class VirtualMachine(VirtualMachine_instruction):
         self.push_frame(frame)
         while True:
             byteName, arguments, opoffset = self.parse_byte_and_args()
+            print(byteName, arguments, opoffset)
             if log.isEnabledFor(logging.INFO):
                 self.log(byteName, arguments, opoffset)
 
@@ -155,6 +156,9 @@ class VirtualMachine(VirtualMachine_instruction):
                 arg = f.f_code.co_varnames[arg]
             else:
                 arg = arg
+            if self.EXTENDED_ARG_ext:
+                arg += self.EXTENDED_ARG_ext * 256
+                self.EXTENDED_ARG_ext = 0
             arguments = [arg]
 
         return byteName, arguments, opoffset

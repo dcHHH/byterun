@@ -21,6 +21,8 @@ class VirtualMachine_instruction:
         self.return_value = None
         self.last_exception = None
 
+        self.EXTENDED_ARG_ext = 0
+
     def top(self):
         """Return the value at the top of the stack, with no changes."""
         return self.frame.stack[-1]
@@ -393,9 +395,16 @@ class VirtualMachine_instruction:
         the_map[key] = val
         self.push(the_map)
 
+    # Unpacks TOS into count individual values,
+    # which are put onto the stack right-to-left.
     def byte_UNPACK_SEQUENCE(self, count):
         seq = self.pop()
-        for x in reversed(seq):
+        if len(seq) == count:
+            seq_2_push = seq
+        else:
+            seq_2_push = [tuple(seq[:-(count - 1)])] + \
+                         seq[-(count - 1):]
+        for x in reversed(seq_2_push):
             self.push(x)
 
     def byte_BUILD_SLICE(self, count):
@@ -747,13 +756,6 @@ class VirtualMachine_instruction:
     def byte_LOAD_CLOSURE(self, name):
         self.push(self.frame.cells[name])
 
-    # def byte_CALL_FUNCTION(self, argc):
-    #     return self.call_function(argc, [], {})
-    #
-    # def byte_CALL_FUNCTION_KW(self, arg):
-    #     kwargs = self.pop()
-    #     return self.call_function(arg, [], kwargs)
-
     def byte_CALL_FUNCTION(self, argc):
         arg = self.popn(argc)
         return self.call_function(arg, [], {})
@@ -769,14 +771,6 @@ class VirtualMachine_instruction:
 
     # 待修改，Python3中未绑定方法改为普通函数
     def call_function(self, arg, args, kwargs):
-        # lenKw, lenPos = divmod(arg, 256)
-        # namedargs = {}
-        # for i in range(lenKw):
-        #     key, val = self.popn(2)
-        #     namedargs[key] = val
-        # namedargs.update(kwargs)
-        # posargs = self.popn(lenPos)
-        # posargs.extend(args)
         posargs, namedargs = arg + args, kwargs
 
         func = self.pop()
@@ -879,7 +873,14 @@ class VirtualMachine_instruction:
     # comprise a four-byte argument,
     # ext being the two most-significant bytes.
     def byte_EXTENDED_ARG(self, ext):
-        # self.push(ext*256 + self.pop())
+        self.EXTENDED_ARG_ext = ext
+
+    # Raises an exception.
+    # argc indicates the number of arguments to the raise statement,
+    # ranging from 0 to 3.
+    # The handler will find the traceback as TOS2,
+    # the parameter as TOS1, and the exception as TOS.
+    def byte_RAISE_VARARGS(self, argc):
         pass
 
     def byte_EXEC_STMT(self):
@@ -931,11 +932,7 @@ def build_class(func, name, *bases, **kwds):
         raise TypeError("func must be a function")
     if not isinstance(name, str):
         raise TypeError("name is not a string")
-    metaclass = kwds.pop('metaclass', None)
-    # (We don't just write 'metaclass=None' in the signature above
-    # because that's a syntax error in Py2.)
-    if metaclass is None:
-        metaclass = type(bases[0]) if bases else type
+    metaclass = type(bases[0]) if bases else type
     if isinstance(metaclass, type):
         metaclass = calculate_metaclass(metaclass, bases)
 
