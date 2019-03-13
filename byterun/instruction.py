@@ -756,17 +756,54 @@ class VirtualMachine_instruction:
     def byte_LOAD_CLOSURE(self, name):
         self.push(self.frame.cells[name])
 
+    # Calls a callable object with positional arguments.
+    # argc indicates the number of positional arguments.
+    # The top of the stack contains positional arguments,
+    # with the right-most argument on top.
+    # Below the arguments is a callable object to call.
+    # CALL_FUNCTION pops all arguments and the callable object off the stack,
+    # calls the callable object with those arguments,
+    # and pushes the return value returned by the callable object.
     def byte_CALL_FUNCTION(self, argc):
         arg = self.popn(argc)
         return self.call_function(arg, [], {})
 
+    # Calls a callable object with positional (if any) and keyword arguments.
+    # argc indicates the total number of positional and keyword arguments.
+    # The top element on the stack contains a tuple of keyword argument names.
+    # Below that are keyword arguments in the order corresponding to the tuple.
+    # Below that are positional arguments, with the right-most parameter on top.
+    # Below the arguments is a callable object to call.
+    # CALL_FUNCTION_KW pops all arguments and the callable object off the stack,
+    # calls the callable object with those arguments,
+    # and pushes the return value returned by the callable object.
     def byte_CALL_FUNCTION_KW(self, argc):
         kwargs_keys = self.pop()
         kwargs_values = self.popn(len(kwargs_keys))
         kwargs = {kwargs_key: kwargs_val
                   for kwargs_key, kwargs_val in
                   zip(kwargs_keys, kwargs_values)}
-        arg = self.pop(argc - len(kwargs_keys))
+        arg = self.popn(argc - len(kwargs_keys))
+        return self.call_function(arg, [], kwargs)
+
+    # Calls a callable object with variable set of positional and keyword arguments.
+    # If the lowest bit of flags is set,
+    # the top of the stack contains a mapping object containing additional keyword arguments.
+    # Below that is an iterable object containing positional arguments
+    # and a callable object to call.
+    # BUILD_MAP_UNPACK_WITH_CALL and BUILD_TUPLE_UNPACK_WITH_CALL can be used for
+    # merging multiple mapping objects and iterables containing arguments.
+    # Before the callable is called,
+    # the mapping object and iterable object are each “unpacked” and
+    # their contents passed in as keyword and positional arguments respectively.
+    # CALL_FUNCTION_EX pops all arguments and the callable object off the stack,
+    # calls the callable object with those arguments,
+    # and pushes the return value returned by the callable object.
+    def byte_CALL_FUNCTION_EX(self, flags):
+        kwargs = {}
+        if flags & 0x01:
+            kwargs = self.pop()
+        arg = list(self.pop())
         return self.call_function(arg, [], kwargs)
 
     # 待修改，Python3中未绑定方法改为普通函数
@@ -774,7 +811,6 @@ class VirtualMachine_instruction:
         posargs, namedargs = arg + args, kwargs
 
         func = self.pop()
-        frame = self.frame
         # 属性
         if hasattr(func, 'im_func'):
             # Methods get self as an implicit first parameter.
