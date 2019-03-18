@@ -29,14 +29,14 @@ class VirtualMachine(VirtualMachine_instruction):
     def make_frame(self, code, callargs=None, f_globals=None, f_locals=None, f_closure=None):
         callargs = callargs if callargs else {}
         log.info(f"make_frame: code={code}, callargs={callargs}")
-        # 全局变量非空，局部变量为空时
-        if f_globals is not None and f_locals is None:
+
+        # 确定全局变量以及局部变量
+        if f_globals is not None and f_locals is None:      # 全局变量非空，局部变量为空时
             f_locals = f_globals
-        # 调用栈非空时
-        elif self.frames:
+        elif self.frames:                                   # 调用栈非空时
             f_globals = self.frame.f_globals
             f_locals = {}
-        else:
+        else:                                               # 新建栈顶frame时
             f_globals = f_locals = {
                 '__builtins__': __builtins__,
                 '__name__': '__main__',
@@ -44,6 +44,7 @@ class VirtualMachine(VirtualMachine_instruction):
                 '__package__': None,
             }
         f_locals.update(callargs)
+
         frame = Frame(code, f_globals, f_locals, f_closure, self.frame)
         return frame
 
@@ -82,7 +83,7 @@ class VirtualMachine(VirtualMachine_instruction):
         self.push_frame(frame)
         while True:
             byteName, arguments, opoffset = self.parse_byte_and_args()
-            # print(byteName, arguments, opoffset)
+            # print(f'{opoffset:>2}, {byteName:<20}, {arguments}')
             if log.isEnabledFor(logging.INFO):
                 self.log(byteName, arguments, opoffset)
 
@@ -118,26 +119,18 @@ class VirtualMachine(VirtualMachine_instruction):
         frame = self.make_frame(code, f_globals=f_globals, f_locals=f_locals)
         val = self.run_frame(frame)
         # Check some invariants
-        if self.frames:                                 # pragma: no cover
+        if self.frames:
             raise VirtualMachineError("Frames left over!")
-        if self.frame and self.frame.stack:             # pragma: no cover
+        if self.frame and self.frame.stack:
             raise VirtualMachineError(f"Data left on stack! {self.frame.stack}")
 
         return val
 
-    def parse_byte_and_args(self):
-        """ Parse bytecode into an instruction and optionally arguments
-        3.6 uses two bytes for every instruction
-        instead of a mix of one and three byte instructions."""
+    # 指令参数对应的bytecode -> 指令参数
+    def index_2_args(self, byteCode, arg):
         f = self.frame
-        opoffset = f.f_lasti
-        byteCode = f.f_code.co_code[opoffset]
-        f.f_lasti += 2
-        byteName = dis.opname[byteCode]
-        arg = None
         arguments = []
         if byteCode >= dis.HAVE_ARGUMENT:
-            arg = f.f_code.co_code[opoffset + 1]
             if byteCode in dis.hasconst:
                 arg = f.f_code.co_consts[arg]
             elif byteCode in dis.hasfree:
@@ -160,6 +153,21 @@ class VirtualMachine(VirtualMachine_instruction):
                 arg += self.EXTENDED_ARG_ext * 256
                 self.EXTENDED_ARG_ext = 0
             arguments = [arg]
+        return arguments
+
+    def parse_byte_and_args(self):
+        """ Parse bytecode into an instruction and optionally arguments
+        3.6 uses two bytes for every instruction
+        instead of a mix of one and three byte instructions."""
+        f = self.frame
+        opoffset = f.f_lasti                                    # 上次指令在bytecode中的下标
+        f.f_lasti += 2                                          # 当前指令
+
+        byteCode = f.f_code.co_code[opoffset]                   # 指令名对应的bytecode
+        byteCode_arg = f.f_code.co_code[opoffset + 1]           # 指令参数对应的bytecode
+
+        byteName = dis.opname[byteCode]                         # 指令名
+        arguments = self.index_2_args(byteCode, byteCode_arg)   # 指令参数
 
         return byteName, arguments, opoffset
 

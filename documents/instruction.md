@@ -41,24 +41,54 @@ CPython 使用三种类型的栈：
 
 #对象类型
 
-##`VirtualMachine`类
+##`VirtualMachine`对象
 它管理高层结构，frame调用栈，指令到操作的映射。
 
 程序运行时只有一个`VirtualMachine`被创建。`VirtualMachine`保存调用栈，异常状态，在frame中传递的返回值。它的入口点是`run_code`方法，它以编译后的code object为参数，以创建一个frame为开始，然后运行这个frame。这个frame可能再创建出新的frame；调用栈随着程序的运行增长缩短。当第一个frame返回时，执行结束。
 
-##`Frame`类
-frame是一个属性的集合，它没有任何方法。这些属性包括由编译器生成的code object；局部，全局和内置命名空间；前一个frame的引用；一个数据栈；一个块栈；最后执行的指令。
+##`Frame`对象
+frame是一个属性的集合，它没有任何方法。
 
-Frame objects
+这些属性包括由编译器生成的code object；局部，全局和内置命名空间；前一个frame的引用；一个数据栈；一个块栈；最后执行的指令。
 
-Frame objects represent execution frames. They may occur in traceback objects (see below).
+**只读属性**：
 
-Special read-only attributes: `f_back` is to the previous stack frame (towards the caller), or `None` if this is the bottom stack frame; `f_code` is the code object being executed in this frame; `f_locals` is the dictionary used to look up local variables; `f_globals` is used for global variables; `f_builtins` is used for built-in (intrinsic) names; `f_lasti` gives the precise instruction (this is an index into the bytecode string of the code object).
+- `f_back` ：调用栈中的上一个frame；如果当前frame位于栈顶，则为空。
 
-Special writable attributes: `f_trace`, if not `None`, is a function called at the start of each source code line (this is used by the debugger); `f_lineno` is the current line number of the frame — writing to this from within a trace function jumps to the given line (only for the bottom-most frame). A debugger can implement a Jump command (aka Set Next Statement) by writing to f_lineno.
+- `f_code` ：当前frame中正在被执行的code object。
+
+- `f_locals` ：本地命名空间
+
+- `f_globals` ：全局命名空间。
+
+- `f_builtins` ：内置命名空间
+
+- `f_lasti` ：上一条字节码指令在`f_code`中的偏移位置。
+
+**可变属性**：
+
+- `f_trace`：异常调用时的句柄，或者为None。
+
+- `f_lineno` ：当前字节码对应的源码行数。
+
+
 
 ##`Function`类
-函数对象
+User-defined functions:
+
+| Attribute                                                    | Meaning                                                      |           |
+| ------------------------------------------------------------ | ------------------------------------------------------------ | --------- |
+| `__doc__`                                                    | The function’s documentation string, or `None` if unavailable; not inherited by subclasses | Writable  |
+| [`__name__`](https://docs.python.org/3.6/library/stdtypes.html#definition.__name__) | The function’s name                                          | Writable  |
+| [`__qualname__`](https://docs.python.org/3.6/library/stdtypes.html#definition.__qualname__) | The function’s [qualified name](https://docs.python.org/3.6/glossary.html#term-qualified-name)*New in version 3.3.* | Writable  |
+| `__module__`                                                 | The name of the module the function was defined in, or `None` if unavailable. | Writable  |
+| `__defaults__`                                               | A tuple containing default argument values for those arguments that have defaults, or `None` if no arguments have a default value | Writable  |
+| `__code__`                                                   | The code object representing the compiled function body.     | Writable  |
+| `__globals__`                                                | A reference to the dictionary that holds the function’s global variables — the global namespace of the module in which the function was defined. | Read-only |
+| [`__dict__`](https://docs.python.org/3.6/library/stdtypes.html#object.__dict__) | The namespace supporting arbitrary function attributes.      | Writable  |
+| `__closure__`                                                | `None` or a tuple of cells that contain bindings for the function’s free variables. | Read-only |
+| `__annotations__`                                            | A dict containing annotations of parameters. The keys of the dict are the parameter names, and `'return'` for the return annotation, if provided. | Writable  |
+| `__kwdefaults__`                                             | A dict containing defaults for keyword-only parameters.      | Writable  |
 
 ##`Block`类
 
@@ -77,32 +107,31 @@ Special writable attributes: `f_trace`, if not `None`, is a function called at t
 
 https://docs.python.org/3/reference/datamodel.html
 
-Special read-only attributes: 
+`co_name` ：对象的名字。
 
- `co_consts` is a tuple containing the literals used by the bytecode;
+ `co_argcount` ：位置参数的数目。
 
- `co_names` is a tuple containing the names used by the bytecode;
+`co_nlocals` ：局部变量的数目。
 
- `co_varnames` is a tuple containing the names of the local variables (starting with the argument names); 
+ `co_consts` ：常量元组。
 
- `co_freevars`is a tuple containing the names of free variables;
+ `co_names` ：常量中的字符串对象元组。
 
-`co_name` gives the function name;
+ `co_varnames` ：局部变量元组。
 
- `co_argcount` is the number of positional arguments (including arguments with default values); 
+`co_cellvars` ：嵌套函数所用局部变量元组。
 
-`co_nlocals` is the number of local variables used by the function (including arguments);
+ `co_freevars`：自由变量元组。
 
-`co_cellvars` is a tuple containing the names of local variables that are referenced by nested functions;
+ `co_code` ：编译所得字节码。
 
- `co_code` is a string representing the sequence of bytecode instructions;
+ `co_filename` ：代码编译时的文件名。
 
- `co_filename` is the filename from which the code was compiled;
+ `co_firstlineno`：对应代码在源码的起始行。
 
- `co_firstlineno` is the first line number of the function;
-
- `co_lnotab` is a string encoding the mapping from bytecode offsets to line numbers (for details see the source code of the interpreter);
+ `co_lnotab` ：字节码与源码之间行号的对应关系（bytes）
 
  `co_stacksize` is the required stack size (including local variables);
 
  `co_flags` is an integer encoding a number of flags for the interpreter。
+

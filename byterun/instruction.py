@@ -199,7 +199,7 @@ class VirtualMachine_instruction:
         elif name in f.f_builtins:
             val = f.f_builtins[name]
         else:
-            raise NameError(f"global name '{name}' is not defined")
+            raise NameError(f"name '{name}' is not defined")
         self.push(val)
 
     def byte_STORE_GLOBAL(self, name):
@@ -353,6 +353,7 @@ class VirtualMachine_instruction:
 
     ## Attributes and indexing
 
+    # Replaces TOS with getattr(TOS, co_names[namei]).
     def byte_LOAD_ATTR(self, attr):
         obj = self.pop()
         val = getattr(obj, attr)
@@ -587,14 +588,19 @@ class VirtualMachine_instruction:
     def byte_SETUP_LOOP(self, dest):
         self.push_block('loop', dest)
 
-    def byte_FOR_ITER(self, jump):
+    # TOS is an iterator. Call its __next__() method.
+    # If this yields a new value,
+    # push it on the stack (leaving the iterator below it).
+    # If the iterator indicates it is exhausted TOS is popped,
+    # and the byte code counter is incremented by delta.
+    def byte_FOR_ITER(self, delta):
         iterobj = self.top()
         try:
             v = next(iterobj)
             self.push(v)
         except StopIteration:
             self.pop()
-            self.jump(jump)
+            self.jump(delta)
 
     def byte_BREAK_LOOP(self):
         return 'break'
@@ -830,6 +836,7 @@ class VirtualMachine_instruction:
         self.return_value = self.pop()
         return "yield"
 
+    # Pops TOS and delegates to it as a subiterator from a generator
     def byte_YIELD_FROM(self):
         u = self.pop()
         x = self.top()
@@ -847,7 +854,7 @@ class VirtualMachine_instruction:
         else:
             # YIELD_FROM decrements f_lasti, so that it will be called
             # repeatedly until a StopIteration is raised.
-            self.jump(self.frame.f_lasti - 1)
+            self.jump(self.frame.f_lasti - 2)
             # Returning "yield" prevents the block stack cleanup code
             # from executing, suspending the frame in its current state.
             return "yield"
