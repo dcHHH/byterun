@@ -439,7 +439,7 @@ class VirtualMachine_instruction:
     def byte_BUILD_CONST_KEY_MAP(self, count):
         map_keys = self.pop()
         map_vals = self.popn(count)
-        the_map = {k: v for k, v in zip(map_keys, map_vals)}
+        the_map = dict(zip(map_keys, map_vals))
         self.push(the_map)
 
     # Concatenates count strings from the stack and
@@ -548,7 +548,6 @@ class VirtualMachine_instruction:
     def byte_JUMP_ABSOLUTE(self, jump):
         self.jump(jump)
 
-    # Not in py2.7
     def byte_JUMP_IF_TRUE(self, jump):
         val = self.top()
         if val:
@@ -593,14 +592,14 @@ class VirtualMachine_instruction:
     # push it on the stack (leaving the iterator below it).
     # If the iterator indicates it is exhausted TOS is popped,
     # and the byte code counter is incremented by delta.
-    def byte_FOR_ITER(self, delta):
+    def byte_FOR_ITER(self, jump):
         iterobj = self.top()
         try:
             v = next(iterobj)
             self.push(v)
         except StopIteration:
             self.pop()
-            self.jump(delta)
+            self.jump(jump)
 
     def byte_BREAK_LOOP(self):
         return 'break'
@@ -734,6 +733,38 @@ class VirtualMachine_instruction:
             # An error occurred, and was suppressed
             self.push('silenced')
 
+    def byte_WITH_CLEANUP_START(self):
+        u = self.top()
+        v = None
+        w = None
+        if u is None:
+            exit_method = self.pop(1)
+        elif isinstance(u, str):
+            if u in {'return', 'continue'}:
+                exit_method = self.pop(2)
+            else:
+                exit_method = self.pop(1)
+        elif issubclass(u, BaseException):
+            w, v, u = self.popn(3)
+            tp, exc, tb = self.popn(3)
+            exit_method = self.pop()
+            self.push(tp, exc, tb)
+            self.push(None)
+            self.push(w, v, u)
+            block = self.pop_block()
+            assert block.type == 'except-handler'
+            self.push_block(block.type, block.handler, block.level-1)
+
+        res = exit_method(u, v, w)
+        self.push(u)
+        self.push(res)
+
+    def byte_WITH_CLEANUP_FINISH(self):
+        res = self.pop()
+        u = self.pop()
+        if type(u) is type and issubclass(u, BaseException) and res:
+                self.push("silenced")
+
     ## Functions
 
     # Pushes a new function object on the stack.
@@ -786,9 +817,7 @@ class VirtualMachine_instruction:
     def byte_CALL_FUNCTION_KW(self, argc):
         kwargs_keys = self.pop()
         kwargs_values = self.popn(len(kwargs_keys))
-        kwargs = {kwargs_key: kwargs_val
-                  for kwargs_key, kwargs_val in
-                  zip(kwargs_keys, kwargs_values)}
+        kwargs = dict(zip(kwargs_keys, kwargs_values))
         arg = self.popn(argc - len(kwargs_keys))
         return self.call_function(arg, [], kwargs)
 
@@ -806,13 +835,10 @@ class VirtualMachine_instruction:
     # calls the callable object with those arguments,
     # and pushes the return value returned by the callable object.
     def byte_CALL_FUNCTION_EX(self, flags):
-        kwargs = {}
-        if flags & 0x01:
-            kwargs = self.pop()
+        kwargs = self.pop() if (flags & 0x1) else {}
         arg = list(self.pop())
         return self.call_function(arg, [], kwargs)
 
-    # 待修改，Python3中未绑定方法改为普通函数
     def call_function(self, arg, args, kwargs):
         posargs, namedargs = arg + args, kwargs
 
@@ -924,7 +950,13 @@ class VirtualMachine_instruction:
     # The handler will find the traceback as TOS2,
     # the parameter as TOS1, and the exception as TOS.
     def byte_RAISE_VARARGS(self, argc):
-        pass
+        cause = exc = None
+        if argc == 2:
+            cause = self.pop()
+            exc = self.pop()
+        elif argc == 1:
+            exc = self.pop()
+        return self.do_raise(exc, cause)
 
     def byte_EXEC_STMT(self):
         stmt, globs, locs = self.popn(3)

@@ -83,6 +83,7 @@ class VirtualMachine(VirtualMachine_instruction):
         self.push_frame(frame)
         while True:
             byteName, arguments, opoffset = self.parse_byte_and_args()
+            # print(self.frame.stack)
             # print(f'{opoffset:>2}, {byteName:<20}, {arguments}')
             if log.isEnabledFor(logging.INFO):
                 self.log(byteName, arguments, opoffset)
@@ -160,8 +161,8 @@ class VirtualMachine(VirtualMachine_instruction):
         3.6 uses two bytes for every instruction
         instead of a mix of one and three byte instructions."""
         f = self.frame
-        opoffset = f.f_lasti                                    # 上次指令在bytecode中的下标
-        f.f_lasti += 2                                          # 当前指令
+        opoffset = f.f_lasti                                    # 当前指令
+        f.f_lasti += 2                                          # 下次指令在bytecode中的下标
 
         byteCode = f.f_code.co_code[opoffset]                   # 指令名对应的bytecode
         byteCode_arg = f.f_code.co_code[opoffset + 1]           # 指令参数对应的bytecode
@@ -187,7 +188,7 @@ class VirtualMachine(VirtualMachine_instruction):
             else:
                 # dispatch
                 bytecode_fn = getattr(self, f'byte_{byteName}', None)
-                if not bytecode_fn:            # pragma: no cover
+                if not bytecode_fn:
                     raise VirtualMachineError(
                         f"unknown bytecode type: {byteName}"
                     )
