@@ -61,7 +61,8 @@ class Frame:
 
 
 class Cell:
-    """A fake cell for closures.
+    """
+    A fake cell for closures.
 
     Closures keep names in scope by storing them not in a frame, but in a
     separate object called a cell.  Frames share references to cells, and
@@ -77,7 +78,6 @@ class Cell:
         2. Actual cell objects can't be modified, so to implement STORE_DEREF,
            we store a one-element list in our cell, and then use [0] as the
            actual value.
-
     """
     def __init__(self, value):
         self.contents = value
@@ -90,8 +90,10 @@ class Cell:
 
 
 def make_cell(value):
-    # Construct an actual cell object by creating a closure right here,
-    # and grabbing the cell object out of the function we create.
+    """
+    Construct an actual cell object by creating a closure right here,
+    and grabbing the cell object out of the function we create.
+    """
     fn = (lambda x: lambda: x)(value)
     return fn.__closure__[0]
 

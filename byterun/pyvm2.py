@@ -183,8 +183,6 @@ class VirtualMachine(VirtualMachine_instruction):
                 self.binaryOperator(byteName[7:])
             elif byteName.startswith('INPLACE_'):
                 self.inplaceOperator(byteName[8:])
-            elif 'SLICE+' in byteName:
-                self.sliceOperator(byteName)
             else:
                 # dispatch
                 bytecode_fn = getattr(self, f'byte_{byteName}', None)

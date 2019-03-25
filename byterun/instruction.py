@@ -1,10 +1,7 @@
 import inspect
 import operator
-import sys
 
-import six
-
-from byterun.pyobj import Block, Method, Function, Generator, Cell
+from byterun.pyobj import Block, Function, Generator, Cell
 
 
 class VirtualMachineError(Exception):
@@ -14,33 +11,37 @@ class VirtualMachineError(Exception):
 
 class VirtualMachine_instruction:
     def __init__(self):
-        # The call stack of frames.
-        self.frames = []
-        # The current frame.
-        self.frame = None
+        self.frames = []                # The call stack of frames.
+        self.frame = None               # The current frame.
         self.return_value = None
         self.last_exception = None
 
         self.EXTENDED_ARG_ext = 0
 
     def top(self):
-        """Return the value at the top of the stack, with no changes."""
+        """
+        Return the value at the top of the stack, with no changes.
+        """
         return self.frame.stack[-1]
 
     def pop(self, i=0):
-        """Pop a value from the stack.
-        Default to the top of the stack, but `i` can be a count from the top
-        instead.
+        """
+        Pop a value from the stack.
+        Default to the top of the stack,
+        but `i` can be a count from the top instead.
         """
         return self.frame.stack.pop(-1-i)
 
     def push(self, *vals):
-        """Push values onto the value stack."""
+        """
+        Push values onto the value stack.
+        """
         self.frame.stack.extend(vals)
 
     def popn(self, n):
-        """Pop a number of values from the value stack.
-        A list of `n` values is returned, the deepest value first.
+        """
+        Pop a number of values from the value stack.
+        A list of n values is returned, the deepest value first.
         """
         if n:
             ret = self.frame.stack[-n:]
@@ -50,11 +51,15 @@ class VirtualMachine_instruction:
             return []
 
     def peek(self, n):
-        """Get a value `n` entries down in the stack, without changing the stack."""
+        """
+        Get a value n entries down in the stack, without changing the stack.
+        """
         return self.frame.stack[-n]
 
     def jump(self, jump):
-        """Move the bytecode pointer to `jump`, so it will execute next."""
+        """
+        Move the bytecode pointer to jump, so it will execute next.
+        """
         self.frame.f_lasti = jump
 
     # Block stack manipulation
@@ -80,9 +85,11 @@ class VirtualMachine_instruction:
             self.last_exception = exctype, value, tb
 
     def manage_block_stack(self, why):
-        """ Manage a frame's block stack.
+        """
+        Manage a frame's block stack.
         Manipulate the block stack and data stack for looping,
-        exception handling, or returning."""
+        exception handling, or returning.
+        """
         assert why != 'yield'
 
         block = self.frame.block_stack[-1]
@@ -128,38 +135,52 @@ class VirtualMachine_instruction:
     ## Stack manipulation
 
     def byte_LOAD_CONST(self, const):
+        """
+        Pushes co_consts[consti] onto the stack
+        """
         self.push(const)
 
     def byte_POP_TOP(self):
+        """
+        Removes the top-of-stack (TOS) item.
+        """
         self.pop()
 
     def byte_DUP_TOP(self):
+        """
+        Duplicates the reference on top of the stack
+        """
         self.push(self.top())
 
-    def byte_DUP_TOPX(self, count):
-        items = self.popn(count)
-        for i in [1, 2]:
-            self.push(*items)
-
     def byte_DUP_TOP_TWO(self):
+        """
+        Duplicates the two references on top of the stack,
+        leaving them in the same order
+        """
         a, b = self.popn(2)
         self.push(a, b, a, b)
 
     def byte_ROT_TWO(self):
+        """
+        Swaps the two top-most stack items
+        """
         a, b = self.popn(2)
         self.push(b, a)
 
     def byte_ROT_THREE(self):
+        """
+        Lifts second and third stack item one position up,
+        moves top down to position three
+        """
         a, b, c = self.popn(3)
         self.push(c, a, b)
-
-    def byte_ROT_FOUR(self):
-        a, b, c, d = self.popn(4)
-        self.push(d, a, b, c)
 
     ## Names
 
     def byte_LOAD_NAME(self, name):
+        """
+        Pushes the value associated with co_names[namei] onto the stack
+        """
         frame = self.frame
         if name in frame.f_locals:
             val = frame.f_locals[name]
@@ -172,12 +193,24 @@ class VirtualMachine_instruction:
         self.push(val)
 
     def byte_STORE_NAME(self, name):
+        """
+        Implements name = TOS.
+        namei is the index of name in the attribute co_names of the code object.
+        The compiler tries to use STORE_FAST or STORE_GLOBAL if possible.
+        """
         self.frame.f_locals[name] = self.pop()
 
     def byte_DELETE_NAME(self, name):
+        """
+        Implements del name, where namei is the index
+        into co_names attribute of the code object.
+        """
         del self.frame.f_locals[name]
 
     def byte_LOAD_FAST(self, name):
+        """
+        Pushes a reference to the local co_varnames[var_num] onto the stack.
+        """
         if name in self.frame.f_locals:
             val = self.frame.f_locals[name]
         else:
@@ -187,12 +220,21 @@ class VirtualMachine_instruction:
         self.push(val)
 
     def byte_STORE_FAST(self, name):
+        """
+        Stores TOS into the local co_varnames[var_num]
+        """
         self.frame.f_locals[name] = self.pop()
 
     def byte_DELETE_FAST(self, name):
+        """
+        Deletes local co_varnames[var_num]
+        """
         del self.frame.f_locals[name]
 
     def byte_LOAD_GLOBAL(self, name):
+        """
+        Loads the global named co_names[namei] onto the stack
+        """
         f = self.frame
         if name in f.f_globals:
             val = f.f_globals[name]
@@ -203,22 +245,34 @@ class VirtualMachine_instruction:
         self.push(val)
 
     def byte_STORE_GLOBAL(self, name):
+        """
+        Works as STORE_NAME, but stores the name as a global
+        """
         f = self.frame
         f.f_globals[name] = self.pop()
 
+    def byte_DELETE_GLOBAL(self, name):
+        """
+        Works as DELETE_NAME, but deletes a global name
+        """
+        del self.frame.f_globals[name]
+
     def byte_LOAD_DEREF(self, name):
+        """
+        Loads the cell contained in slot i of the cell and free variable storage.
+        Pushes a reference to the object the cell contains on the stack
+        """
         self.push(self.frame.cells[name].get())
 
     def byte_STORE_DEREF(self, name):
+        """
+        Stores TOS into the cell contained in slot i of the cell
+        and free variable storage
+        """
         self.frame.cells[name].set(self.pop())
-
-    def byte_LOAD_LOCALS(self):
-        self.push(self.frame.f_locals)
 
     ## Operators
 
-    # Unary operations take the top of the stack,
-    # apply the operation, and push the result back on the stack.
     UNARY_OPERATORS = {
         'POSITIVE': operator.pos,
         'NEGATIVE': operator.neg,
@@ -227,21 +281,13 @@ class VirtualMachine_instruction:
     }
 
     def unaryOperator(self, op):
+        """
+        Unary operations take the top of the stack,
+        apply the operation, and push the result back on the stack.
+        """
         x = self.pop()
         self.push(self.UNARY_OPERATORS[op](x))
 
-    def byte_GET_ITER(self):
-        self.push(iter(self.pop()))
-
-    def byte_GET_YIELD_FROM_ITER(self):
-        if not (inspect.isgenerator(self.top()) or
-                inspect.iscoroutine(self.top())):
-            self.push(iter(self.pop()))
-
-    # Binary operations remove
-    # the top of the stack (TOS) and
-    # the second top-most stack item (TOS1) from the stack.
-    # They perform the operation, and put the result back on the stack.
     BINARY_OPERATORS = {
         'POWER':            pow,
         'MULTIPLY':         operator.mul,
@@ -260,15 +306,23 @@ class VirtualMachine_instruction:
     }
 
     def binaryOperator(self, op):
+        """
+        Binary operations remove
+        the top of the stack (TOS) and
+        the second top-most stack item (TOS1) from the stack.
+        They perform the operation, and put the result back on the stack.
+        """
         x, y = self.popn(2)
         self.push(self.BINARY_OPERATORS[op](x, y))
 
-    # In-place operations are like binary operations,
-    # in that they remove TOS and TOS1,
-    # and push the result back on the stack,
-    # but the operation is done in-place when TOS1 supports it,
-    # and the resulting TOS may be (but does not have to be) the original TOS1.
     def inplaceOperator(self, op):
+        """
+        In-place operations are like binary operations,
+        in that they remove TOS and TOS1,
+        and push the result back on the stack,
+        but the operation is done in-place when TOS1 supports it,
+        and the resulting TOS may be (but does not have to be) the original TOS1.
+        """
         x, y = self.popn(2)
         if op == 'POWER':
             x **= y
@@ -296,44 +350,9 @@ class VirtualMachine_instruction:
             x ^= y
         elif op == 'OR':
             x |= y
-        else:           # pragma: no cover
+        else:
             raise VirtualMachineError(f"Unknown in-place operator: {op}")
         self.push(x)
-
-    def byte_STORE_SUBSCR(self):
-        val, obj, subscr = self.popn(3)
-        obj[subscr] = val
-
-    def byte_DELETE_SUBSCR(self):
-        obj, subscr = self.popn(2)
-        del obj[subscr]
-
-    def sliceOperator(self, op):
-        start = 0
-        end = None          # we will take this to mean end
-        op, count = op[:-2], int(op[-1])
-        if count == 1:
-            start = self.pop()
-        elif count == 2:
-            end = self.pop()
-        elif count == 3:
-            end = self.pop()
-            start = self.pop()
-        l = self.pop()
-        if end is None:
-            end = len(l)
-        if op.startswith('STORE_'):
-            l[start:end] = self.pop()
-        elif op.startswith('DELETE_'):
-            del l[start:end]
-        else:
-            self.push(l[start:end])
-
-    # Performs a Boolean operation.
-    # The operation name can be found in cmp_op[opname]
-    def byte_COMPARE_OP(self, opnum):
-        x, y = self.popn(2)
-        self.push(self.COMPARE_OPERATORS[opnum](x, y))
 
     # cmp_op = ('<', '<=', '==', '!=', '>', '>=', 'in', 'not in', 'is',
     #           'is not', 'exception match', 'BAD')
@@ -351,224 +370,286 @@ class VirtualMachine_instruction:
         lambda x, y: issubclass(x, Exception) and issubclass(x, y),
     ]
 
+    def byte_COMPARE_OP(self, opnum):
+        """
+        Performs a Boolean operation.
+        The operation name can be found in cmp_op[opname]
+        """
+        x, y = self.popn(2)
+        self.push(self.COMPARE_OPERATORS[opnum](x, y))
+
+    def byte_GET_ITER(self):
+        """
+        Implements TOS = iter(TOS)
+        """
+        self.push(iter(self.pop()))
+
+    def byte_GET_YIELD_FROM_ITER(self):
+        """
+        If TOS is a generator iterator or coroutine object it is left as is.
+        Otherwise, implements TOS = iter(TOS)
+        """
+        if not (inspect.isgenerator(self.top()) or
+                inspect.iscoroutine(self.top())):
+            self.push(iter(self.pop()))
+
+    def byte_STORE_SUBSCR(self):
+        """
+        Implements TOS1[TOS] = TOS2
+        """
+        val, obj, subscr = self.popn(3)
+        obj[subscr] = val
+
+    def byte_DELETE_SUBSCR(self):
+        """
+        Implements del TOS1[TOS]
+        """
+        obj, subscr = self.popn(2)
+        del obj[subscr]
+
     ## Attributes and indexing
 
-    # Replaces TOS with getattr(TOS, co_names[namei]).
     def byte_LOAD_ATTR(self, attr):
+        """
+        Replaces TOS with getattr(TOS, co_names[namei]).
+        """
         obj = self.pop()
         val = getattr(obj, attr)
         self.push(val)
 
     def byte_STORE_ATTR(self, name):
+        """
+        Implements TOS.name = TOS1,
+        where namei is the index of name in co_names
+        """
         val, obj = self.popn(2)
         setattr(obj, name, val)
 
     def byte_DELETE_ATTR(self, name):
+        """
+        Implements del TOS.name, using namei as index into co_names
+        """
         obj = self.pop()
         delattr(obj, name)
 
     ## Building
 
     def byte_BUILD_TUPLE(self, count):
+        """
+        Creates a tuple consuming count items from the stack,
+        and pushes the resulting tuple onto the stack
+        """
         elts = self.popn(count)
         self.push(tuple(elts))
 
     def byte_BUILD_LIST(self, count):
+        """
+        Works as BUILD_TUPLE, but creates a list
+        """
         elts = self.popn(count)
         self.push(elts)
 
     def byte_BUILD_SET(self, count):
+        """
+        Works as BUILD_TUPLE, but creates a set
+        """
         elts = self.popn(count)
         self.push(set(elts))
 
-    # Pushes a new dictionary object onto the stack.
-    # Pops 2 * count items
-    # so that the dictionary holds count entries:
-    # {..., TOS3: TOS2, TOS1: TOS}.
     def byte_BUILD_MAP(self, count):
+        """
+        Pushes a new dictionary object onto the stack.
+        Pops 2 * count items
+        so that the dictionary holds count entries:
+        {..., TOS3: TOS2, TOS1: TOS}
+        """
         map_args = self.popn(2 * count)
-        the_map = {map_args[i]: map_args[i + 1]
-                   for i in range(0, len(map_args), 2)}
-        self.push(the_map)
-
-    def byte_STORE_MAP(self):
-        the_map, val, key = self.popn(3)
-        the_map[key] = val
-        self.push(the_map)
-
-    # Unpacks TOS into count individual values,
-    # which are put onto the stack right-to-left.
-    def byte_UNPACK_SEQUENCE(self, count):
-        seq = self.pop()
-        if len(seq) == count:
-            seq_2_push = seq
-        else:
-            seq_2_push = [tuple(seq[:-(count - 1)])] + \
-                         seq[-(count - 1):]
-        for x in reversed(seq_2_push):
-            self.push(x)
+        self.push(dict(zip(map_args[::2], map_args[1::2])))
 
     def byte_BUILD_SLICE(self, count):
+        """
+        Pushes a slice object on the stack.
+        argc must be 2 or 3. If it is 2, slice(TOS1, TOS) is pushed;
+        if it is 3, slice(TOS2, TOS1, TOS) is pushed
+        """
         if count == 2:
-            x, y = self.popn(2)
-            self.push(slice(x, y))
+            start, end = self.popn(2)
+            self.push(slice(start, end))
         elif count == 3:
-            x, y, z = self.popn(3)
-            self.push(slice(x, y, z))
-        else:           # pragma: no cover
+            start, end, step = self.popn(3)
+            self.push(slice(start, end, step))
+        else:
             raise VirtualMachineError(f"Strange BUILD_SLICE count: {count}")
 
-    def byte_LIST_APPEND(self, count):
-        val = self.pop()
-        the_list = self.peek(count)
-        the_list.append(val)
-
-    def byte_SET_ADD(self, count):
-        val = self.pop()
-        the_set = self.peek(count)
-        the_set.add(val)
-
-    def byte_MAP_ADD(self, count):
-        val, key = self.popn(2)
-        the_map = self.peek(count)
-        the_map[key] = val
-
-    # The version of BUILD_MAP specialized for constant keys.
-    # count values are consumed from the stack.
-    # The top element on the stack contains a tuple of keys.
     def byte_BUILD_CONST_KEY_MAP(self, count):
+        """
+        The version of BUILD_MAP specialized for constant keys.
+        count values are consumed from the stack.
+        The top element on the stack contains a tuple of keys.
+        :param count:
+        :return:
+        """
         map_keys = self.pop()
         map_vals = self.popn(count)
         the_map = dict(zip(map_keys, map_vals))
         self.push(the_map)
 
-    # Concatenates count strings from the stack and
-    # pushes the resulting string onto the stack.
-    # what make f-string faster
     def byte_BUILD_STRING(self, count):
+        """
+        Concatenates count strings from the stack and
+        pushes the resulting string onto the stack.
+        what make f-string faster
+        """
         string_arg = self.popn(count)
         self.push(''.join(string_arg))
 
-    # Pops count iterables from the stack,
-    # joins them in a single tuple, and pushes the result.
-    # Implements iterable unpacking in tuple displays (*x, *y, *z).
     def byte_BUILD_TUPLE_UNPACK(self, count):
+        """
+        Pops count iterables from the stack,
+        joins them in a single tuple, and pushes the result.
+        Implements iterable unpacking in tuple displays (*x, *y, *z).
+        """
         elts = self.popn(count)
         self.push(tuple(j for i in elts for j in i))
 
-    # This is similar to BUILD_TUPLE_UNPACK,
-    # but is used for f(*x, *y, *z) call syntax.
-    # The stack item at position count + 1
-    # should be the corresponding callable f.
     def byte_BUILD_TUPLE_UNPACK_WITH_CALL(self, count):
+        """
+        This is similar to BUILD_TUPLE_UNPACK,
+        but is used for f(*x, *y, *z) call syntax.
+        The stack item at position count + 1
+        should be the corresponding callable f
+        """
+        assert callable(self.peek(count + 1))
         elts = self.popn(count)
         self.push(tuple(j for i in elts for j in i))
 
-    # This is similar to BUILD_TUPLE_UNPACK,
-    # but pushes a list instead of tuple.
-    # Implements iterable unpacking in list displays [*x, *y, *z].
     def byte_BUILD_LIST_UNPACK(self, count):
+        """
+        This is similar to BUILD_TUPLE_UNPACK,
+        but pushes a list instead of tuple.
+        Implements iterable unpacking in list displays [*x, *y, *z]
+        """
         elts = self.popn(count)
         self.push(list(j for i in elts for j in i))
 
-    # This is similar to BUILD_TUPLE_UNPACK,
-    # but pushes a set instead of tuple.
-    # Implements iterable unpacking in set displays {*x, *y, *z}.
     def byte_BUILD_SET_UNPACK(self, count):
+        """
+        This is similar to BUILD_TUPLE_UNPACK,
+        but pushes a set instead of tuple.
+        Implements iterable unpacking in set displays {*x, *y, *z}
+        """
         elts = self.popn(count)
         self.push(set(j for i in elts for j in i))
 
-    # Pops count mappings from the stack,
-    # merges them into a single dictionary, and pushes the result.
-    # Implements dictionary unpacking in dictionary displays {**x, **y, **z}.
     def byte_BUILD_MAP_UNPACK(self, count):
+        """
+        Pops count mappings from the stack,
+        merges them into a single dictionary, and pushes the result.
+        Implements dictionary unpacking in dictionary displays {**x, **y, **z}
+        """
         elts = self.popn(count)
         map_2_push = {}
         for i in elts:
             map_2_push.update(i)
         self.push(map_2_push)
 
-    # This is similar to BUILD_MAP_UNPACK,
-    # but is used for f(**x, **y, **z) call syntax.
-    # The stack item at position count + 2
-    # should be the corresponding callable f.
     def byte_BUILD_MAP_UNPACK_WITH_CALL(self, count):
+        """
+        This is similar to BUILD_MAP_UNPACK,
+        but is used for f(**x, **y, **z) call syntax.
+        The stack item at position count + 2
+        should be the corresponding callable f
+        """
+        assert callable(self.peek(count + 2))
         elts = self.popn(count)
         map_2_push = {}
         for i in elts:
             map_2_push.update(i)
         self.push(map_2_push)
 
-    ## Printing
-
-    # Only used in the interactive interpreter, not in modules.
-    def byte_PRINT_EXPR(self):
-        print(self.pop())
-
-    def byte_PRINT_ITEM(self):
-        item = self.pop()
-        self.print_item(item)
-
-    def byte_PRINT_ITEM_TO(self):
-        to = self.pop()
-        item = self.pop()
-        self.print_item(item, to)
-
-    def byte_PRINT_NEWLINE(self):
-        self.print_newline()
-
-    def byte_PRINT_NEWLINE_TO(self):
-        to = self.pop()
-        self.print_newline(to)
-
-    def print_item(self, item, to=None):
-        if to is None:
-            to = sys.stdout
-        if to.softspace:
-            print(" ", end="", file=to)
-            to.softspace = 0
-        print(item, end="", file=to)
-        if isinstance(item, str):
-            if (not item) or (not item[-1].isspace()) or (item[-1] == " "):
-                to.softspace = 1
+    def byte_UNPACK_SEQUENCE(self, count):
+        """
+        Unpacks TOS into count individual values,
+        which are put onto the stack right-to-left
+        """
+        seq = self.pop()
+        if len(seq) == count:
+            seq_2_push = seq
         else:
-            to.softspace = 1
+            seq_2_push = [seq[:-(count - 1)]] + \
+                         seq[-(count - 1):]
+        for x in reversed(seq_2_push):
+            self.push(x)
 
-    def print_newline(self, to=None):
-        if to is None:
-            to = sys.stdout
-        print("", file=to)
-        to.softspace = 0
+    # For all of the SET_ADD, LIST_APPEND and MAP_ADD instructions,
+    # while the added value or key/value pair is popped off,
+    # the container object remains on the stack
+    # so that it is available for further iterations of the loop.
+    def byte_LIST_APPEND(self, count):
+        """
+        Calls list.append(TOS[-i], TOS).
+        Used to implement list comprehensions
+        """
+        val = self.pop()
+        the_list = self.peek(count)
+        the_list.append(val)
+
+    def byte_SET_ADD(self, count):
+        """
+        Calls set.add(TOS1[-i], TOS).
+        Used to implement set comprehensions
+        """
+        val = self.pop()
+        the_set = self.peek(count)
+        the_set.add(val)
+
+    def byte_MAP_ADD(self, count):
+        """
+        Calls dict.setitem(TOS1[-i], TOS, TOS1).
+        Used to implement dict comprehensions
+        """
+        val, key = self.popn(2)
+        the_map = self.peek(count)
+        the_map[key] = val
 
     ## Jumps
 
     def byte_JUMP_FORWARD(self, jump):
+        """
+        Increments bytecode counter by delta
+        """
         self.jump(jump)
 
     def byte_JUMP_ABSOLUTE(self, jump):
+        """
+        Set bytecode counter to target.
+        """
         self.jump(jump)
 
-    def byte_JUMP_IF_TRUE(self, jump):
-        val = self.top()
-        if val:
-            self.jump(jump)
-
-    def byte_JUMP_IF_FALSE(self, jump):
-        val = self.top()
-        if not val:
-            self.jump(jump)
-
     def byte_POP_JUMP_IF_TRUE(self, jump):
+        """
+        If TOS is true, sets the bytecode counter to target.
+        TOS is popped
+        """
         val = self.pop()
         if val:
             self.jump(jump)
 
     def byte_POP_JUMP_IF_FALSE(self, jump):
+        """
+        If TOS is false, sets the bytecode counter to target.
+        TOS is popped
+        """
         val = self.pop()
         if not val:
             self.jump(jump)
 
     def byte_JUMP_IF_TRUE_OR_POP(self, jump):
+        """
+        If TOS is true,
+        sets the bytecode counter to target and leaves TOS on the stack.
+        Otherwise (TOS is false), TOS is popped
+        """
         val = self.top()
         if val:
             self.jump(jump)
@@ -576,6 +657,13 @@ class VirtualMachine_instruction:
             self.pop()
 
     def byte_JUMP_IF_FALSE_OR_POP(self, jump):
+        """
+        If TOS is false,
+        sets the bytecode counter to target and leaves TOS on the stack.
+        Otherwise (TOS is true), TOS is popped
+        :param jump:
+        :return:
+        """
         val = self.top()
         if not val:
             self.jump(jump)
@@ -585,14 +673,20 @@ class VirtualMachine_instruction:
     ## Blocks
 
     def byte_SETUP_LOOP(self, dest):
+        """
+        Pushes a block for a loop onto the block stack.
+        The block spans from the current instruction with a size of delta bytes
+        """
         self.push_block('loop', dest)
 
-    # TOS is an iterator. Call its __next__() method.
-    # If this yields a new value,
-    # push it on the stack (leaving the iterator below it).
-    # If the iterator indicates it is exhausted TOS is popped,
-    # and the byte code counter is incremented by delta.
     def byte_FOR_ITER(self, jump):
+        """
+        TOS is an iterator. Call its __next__() method.
+        If this yields a new value,
+        push it on the stack (leaving the iterator below it).
+        If the iterator indicates it is exhausted TOS is popped,
+        and the byte code counter is incremented by delta
+        """
         iterobj = self.top()
         try:
             v = next(iterobj)
@@ -772,75 +866,92 @@ class VirtualMachine_instruction:
 
     ## Functions
 
-    # Pushes a new function object on the stack.
-    # From bottom to top,
-    # the consumed stack must consist of values
-    # if the argument carries a specified flag value
-
-    # 0x01 a tuple of default values for positional-only
-    # and positional-or-keyword parameters in positional order
-    # 0x02 a dictionary of keyword-only parameters’ default values
-    # 0x04 an annotation dictionary
-    # 0x08 a tuple containing cells for free variables, making a closure
-    # the code associated with the function (at TOS1)
-    # the qualified name of the function (at TOS)
     def byte_MAKE_FUNCTION(self, argc):
+        """
+        Pushes a new function object on the stack.
+        From bottom to top, the consumed stack must consist of values
+        if the argument carries a specified flag value
+
+        0x01    a tuple of default values for positional-only
+                and positional-or-keyword parameters in positional order
+        0x02    a dictionary of keyword-only parameters’ default values
+        0x04    an annotation dictionary
+        0x08    a tuple containing cells for free variables, making a closure
+
+        the code associated with the function (at TOS1)
+        the qualified name of the function (at TOS)
+        """
         name = self.pop()
         code = self.pop()
         globs = self.frame.f_globals
+
         closure = self.pop() if (argc & 0x8) else None
         ann = self.pop() if (argc & 0x4) else None
         kwdefaults = self.pop() if (argc & 0x02) else None
         defaults = self.pop() if (argc & 0x01) else None
+
         fn = Function(name, code, globs, defaults, kwdefaults, closure, self)
         self.push(fn)
 
     def byte_LOAD_CLOSURE(self, name):
+        """
+        Pushes a reference to the cell
+        contained in slot i of the cell and free variable storage.
+        The name of the variable is co_cellvars[i]
+        if i is less than the length of co_cellvars.
+        Otherwise it is co_freevars[i - len(co_cellvars)]
+        """
         self.push(self.frame.cells[name])
 
-    # Calls a callable object with positional arguments.
-    # argc indicates the number of positional arguments.
-    # The top of the stack contains positional arguments,
-    # with the right-most argument on top.
-    # Below the arguments is a callable object to call.
-    # CALL_FUNCTION pops all arguments and the callable object off the stack,
-    # calls the callable object with those arguments,
-    # and pushes the return value returned by the callable object.
     def byte_CALL_FUNCTION(self, argc):
+        """
+        Calls a callable object with positional arguments.
+        argc indicates the number of positional arguments.
+        The top of the stack contains positional arguments,
+        with the right-most argument on top.
+        Below the arguments is a callable object to call.
+        CALL_FUNCTION pops all arguments and the callable object off the stack,
+        calls the callable object with those arguments,
+        and pushes the return value returned by the callable object
+        """
         arg = self.popn(argc)
         return self.call_function(arg, [], {})
 
-    # Calls a callable object with positional (if any) and keyword arguments.
-    # argc indicates the total number of positional and keyword arguments.
-    # The top element on the stack contains a tuple of keyword argument names.
-    # Below that are keyword arguments in the order corresponding to the tuple.
-    # Below that are positional arguments, with the right-most parameter on top.
-    # Below the arguments is a callable object to call.
-    # CALL_FUNCTION_KW pops all arguments and the callable object off the stack,
-    # calls the callable object with those arguments,
-    # and pushes the return value returned by the callable object.
     def byte_CALL_FUNCTION_KW(self, argc):
+        """
+        Calls a callable object with positional (if any) and keyword arguments.
+        argc indicates the total number of positional and keyword arguments.
+        The top element on the stack contains a tuple of keyword argument names.
+        Below that are keyword arguments in the order corresponding to the tuple.
+        Below that are positional arguments, with the right-most parameter on top.
+        Below the arguments is a callable object to call.
+        CALL_FUNCTION_KW pops all arguments and the callable object off the stack,
+        calls the callable object with those arguments,
+        and pushes the return value returned by the callable object
+        """
         kwargs_keys = self.pop()
         kwargs_values = self.popn(len(kwargs_keys))
         kwargs = dict(zip(kwargs_keys, kwargs_values))
         arg = self.popn(argc - len(kwargs_keys))
         return self.call_function(arg, [], kwargs)
 
-    # Calls a callable object with variable set of positional and keyword arguments.
-    # If the lowest bit of flags is set,
-    # the top of the stack contains a mapping object containing additional keyword arguments.
-    # Below that is an iterable object containing positional arguments
-    # and a callable object to call.
-    # BUILD_MAP_UNPACK_WITH_CALL and BUILD_TUPLE_UNPACK_WITH_CALL can be used for
-    # merging multiple mapping objects and iterables containing arguments.
-    # Before the callable is called,
-    # the mapping object and iterable object are each “unpacked” and
-    # their contents passed in as keyword and positional arguments respectively.
-    # CALL_FUNCTION_EX pops all arguments and the callable object off the stack,
-    # calls the callable object with those arguments,
-    # and pushes the return value returned by the callable object.
     def byte_CALL_FUNCTION_EX(self, flags):
-        kwargs = self.pop() if (flags & 0x1) else {}
+        """
+        Calls a callable object with variable set of positional and keyword arguments.
+        If the lowest bit of flags is set,
+        the top of the stack contains a mapping object containing additional keyword arguments.
+        Below that is an iterable object containing positional arguments
+        and a callable object to call.
+        BUILD_MAP_UNPACK_WITH_CALL and BUILD_TUPLE_UNPACK_WITH_CALL can be used for
+        merging multiple mapping objects and iterables containing arguments.
+        Before the callable is called,
+        the mapping object and iterable object are each “unpacked” and
+        their contents passed in as keyword and positional arguments respectively.
+        CALL_FUNCTION_EX pops all arguments and the callable object off the stack,
+        calls the callable object with those arguments,
+        and pushes the return value returned by the callable object
+        """
+        kwargs = self.pop() if (flags & 0x01) else {}
         arg = list(self.pop())
         return self.call_function(arg, [], kwargs)
 
@@ -848,7 +959,7 @@ class VirtualMachine_instruction:
         posargs, namedargs = arg + args, kwargs
 
         func = self.pop()
-        # 属性
+        # 属性（类方法）
         if hasattr(func, 'im_func'):
             # Methods get self as an implicit first parameter.
             if func.im_self:
@@ -858,17 +969,25 @@ class VirtualMachine_instruction:
         self.push(retval)
 
     def byte_RETURN_VALUE(self):
+        """
+        Returns with TOS to the caller of the function
+        """
         self.return_value = self.pop()
         if self.frame.generator:
             self.frame.generator.finished = True
         return "return"
 
     def byte_YIELD_VALUE(self):
+        """
+        Pops TOS and yields it from a generator
+        """
         self.return_value = self.pop()
         return "yield"
 
-    # Pops TOS and delegates to it as a subiterator from a generator
     def byte_YIELD_FROM(self):
+        """
+        Pops TOS and delegates to it as a subiterator from a generator
+        """
         u = self.pop()
         x = self.top()
 
@@ -893,6 +1012,15 @@ class VirtualMachine_instruction:
     ## Importing
 
     def byte_IMPORT_NAME(self, name):
+        """
+        Imports the module co_names[namei].
+        TOS and TOS1 are popped and provide the fromlist
+        and level arguments of __import__().
+        The module object is pushed onto the stack.
+        The current namespace is not affected:
+        for a proper import statement,
+        a subsequent STORE_FAST instruction modifies the namespace
+        """
         level, fromlist = self.popn(2)
         frame = self.frame
         self.push(
@@ -900,83 +1028,101 @@ class VirtualMachine_instruction:
         )
 
     def byte_IMPORT_STAR(self):
-        # TODO: this doesn't use __all__ properly.
+        """
+        Loads all symbols not starting with '_'
+        directly from the module TOS to the local namespace.
+        The module is popped after loading all names.
+        This opcode implements from module import *
+        """
         mod = self.pop()
         for attr in dir(mod):
             if attr[0] != '_':
                 self.frame.f_locals[attr] = getattr(mod, attr)
 
     def byte_IMPORT_FROM(self, name):
+        """
+        Loads the attribute co_names[namei]
+        from the module found in TOS.
+        The resulting object is pushed onto the stack,
+        to be subsequently stored by a STORE_FAST instruction
+        """
         mod = self.top()
         self.push(getattr(mod, name))
 
-    # Coroutine opcodes
+    # Coroutine
 
-    # Implements TOS = get_awaitable(TOS),
-    # where get_awaitable(o) returns o
-    # if o is a coroutine object or
-    # a generator object with the CO_ITERABLE_COROUTINE flag,
-    # or resolves o.__await__.
     def byte_GET_AWAITABLE(self):
+        """
+        Implements TOS = get_awaitable(TOS),
+        where get_awaitable(o) returns o
+        if o is a coroutine object or
+        a generator object with the CO_ITERABLE_COROUTINE flag,
+        or resolves o.__await__
+        """
         pass
 
-    # Implements TOS = get_awaitable(TOS.__aiter__())
     def byte_GET_AITER(self):
+        """
+        Implements TOS = get_awaitable(TOS.__aiter__())
+        """
         pass
 
-    # Implements PUSH(get_awaitable(TOS.__anext__()))
     def byte_GET_ANEXT(self):
+        """
+        Implements PUSH(get_awaitable(TOS.__anext__()))
+        """
         pass
 
-    # Resolves __aenter__ and __aexit__
-    # from the object on top of the stack.
-    # Pushes __aexit__ and result of __aenter__() to the stack.
     def byte_BEFORE_ASYNC_WITH(self):
+        """
+        Resolves __aenter__ and __aexit__
+        from the object on top of the stack.
+        Pushes __aexit__ and result of __aenter__() to the stack
+        """
         pass
 
-    # Creates a new frame object.
     def byte_SETUP_ASYNC_WITH(self):
+        """
+        Creates a new frame object
+        """
         pass
-
 
     ## And the rest...
-    # Prefixes any opcode which has an argument too big
-    # to fit into the default two bytes.
-    # ext holds two additional bytes which,
-    # taken together with the subsequent opcode’s argument,
-    # comprise a four-byte argument,
-    # ext being the two most-significant bytes.
+
+    def byte_PRINT_EXPR(self):
+        """
+        Implements the expression statement for the interactive mode.
+        TOS is removed from the stack and printed.
+        In non-interactive mode, an expression statement is terminated with POP_TOP.
+        """
+        print(self.pop())
+
     def byte_EXTENDED_ARG(self, ext):
+        """
+        Prefixes any opcode which has an argument too big
+        to fit into the default two bytes.
+        ext holds two additional bytes which,
+        taken together with the subsequent opcode’s argument,
+        comprise a four-byte argument,
+        ext being the two most-significant bytes
+        """
         self.EXTENDED_ARG_ext = ext
 
-    def byte_EXEC_STMT(self):
-        stmt, globs, locs = self.popn(3)
-        six.exec_(stmt, globs, locs)
-
-    def byte_LOAD_BUILD_CLASS(self):
-        # New in py3
-        self.push(build_class)
-
-    def byte_STORE_LOCALS(self):
-        self.frame.f_locals = self.pop()
-
-    # Not in py2.7
-    def byte_SET_LINENO(self, lineno):
-        self.frame.f_lineno = lineno
-
-    # Used for implementing formatted literal strings (f-strings).
-    # Pops an optional fmt_spec from the stack,
-    # then a required value.
-    # Formatting is performed using PyObject_Format().
-    # The result is pushed on the stack.
-
-    # flags is interpreted as follows:
-    # (flags & 0x03) == 0x00: value is formatted as-is.
-    # (flags & 0x03) == 0x01: call str() on value before formatting it.
-    # (flags & 0x03) == 0x02: call repr() on value before formatting it.
-    # (flags & 0x03) == 0x03: call ascii() on value before formatting it.
-    # (flags & 0x04) == 0x04: pop fmt_spec from the stack and use it, else use an empty fmt_spec.
     def byte_FORMAT_VALUE(self, flags):
+        """
+        Used for implementing formatted literal strings (f-strings).
+        Pops an optional fmt_spec from the stack,
+        then a required value.
+        Formatting is performed using PyObject_Format().
+        The result is pushed on the stack.
+
+        flags is interpreted as follows:
+        (flags & 0x03) == 0x00: value is formatted as-is.
+        (flags & 0x03) == 0x01: call str() on value before formatting it.
+        (flags & 0x03) == 0x02: call repr() on value before formatting it.
+        (flags & 0x03) == 0x03: call ascii() on value before formatting it.
+        (flags & 0x04) == 0x04: pop fmt_spec from the stack and use it, else use an empty fmt_spec.
+        """
         str_2_push = ''
         if (flags & 0x03) == 0x00:
             str_2_push = self.pop()
@@ -988,8 +1134,15 @@ class VirtualMachine_instruction:
             str_2_push = ascii(self.pop())
         elif (flags & 0x04) == 0x04:
             fmt_spec = self.pop()
-            str_2_push = fmt_spec.format(self.pop())
+            str_2_push = fmt_spec(self.pop())
         self.push(str_2_push)
+
+    def byte_LOAD_BUILD_CLASS(self):
+        """
+        Pushes builtins.__build_class__() onto the stack.
+        It is later called by CALL_FUNCTION to construct a class
+        """
+        self.push(build_class)
 
 
 def build_class(func, name, *bases, **kwds):
