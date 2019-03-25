@@ -646,14 +646,19 @@ class VirtualMachine_instruction:
     def byte_POP_BLOCK(self):
         self.pop_block()
 
-        def byte_RAISE_VARARGS(self, argc):
-            cause = exc = None
-            if argc == 2:
-                cause = self.pop()
-                exc = self.pop()
-            elif argc == 1:
-                exc = self.pop()
-            return self.do_raise(exc, cause)
+    # Raises an exception.
+    # argc indicates the number of arguments to the raise statement,
+    # ranging from 0 to 3.
+    # The handler will find the traceback as TOS2,
+    # the parameter as TOS1, and the exception as TOS.
+    def byte_RAISE_VARARGS(self, argc):
+        cause = exc = None
+        if argc == 2:
+            cause = self.pop()
+            exc = self.pop()
+        elif argc == 1:
+            exc = self.pop()
+        return self.do_raise(exc, cause)
 
     def do_raise(self, exc, cause):
         if exc is None:         # reraise
@@ -944,20 +949,6 @@ class VirtualMachine_instruction:
     def byte_EXTENDED_ARG(self, ext):
         self.EXTENDED_ARG_ext = ext
 
-    # Raises an exception.
-    # argc indicates the number of arguments to the raise statement,
-    # ranging from 0 to 3.
-    # The handler will find the traceback as TOS2,
-    # the parameter as TOS1, and the exception as TOS.
-    def byte_RAISE_VARARGS(self, argc):
-        cause = exc = None
-        if argc == 2:
-            cause = self.pop()
-            exc = self.pop()
-        elif argc == 1:
-            exc = self.pop()
-        return self.do_raise(exc, cause)
-
     def byte_EXEC_STMT(self):
         stmt, globs, locs = self.popn(3)
         six.exec_(stmt, globs, locs)
@@ -1044,3 +1035,6 @@ def calculate_metaclass(metaclass, bases):
         elif not issubclass(winner, t):
             raise TypeError("metaclass conflict", winner, t)
     return winner
+
+
+

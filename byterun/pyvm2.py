@@ -31,8 +31,9 @@ class VirtualMachine(VirtualMachine_instruction):
         log.info(f"make_frame: code={code}, callargs={callargs}")
 
         # 确定全局变量以及局部变量
-        if f_globals is not None and f_locals is None:      # 全局变量非空，局部变量为空时
-            f_locals = f_globals
+        if f_globals is not None:                           # 全局变量非空
+            if f_locals is None:                            # 局部变量为空时
+                f_locals = f_globals
         elif self.frames:                                   # 调用栈非空时
             f_globals = self.frame.f_globals
             f_locals = {}
@@ -84,7 +85,7 @@ class VirtualMachine(VirtualMachine_instruction):
         while True:
             byteName, arguments, opoffset = self.parse_byte_and_args()
             # print(self.frame.stack)
-            # print(f'{opoffset:>2}, {byteName:<20}, {arguments}')
+            print(f'{opoffset:>2}, {byteName:<20}, {arguments}')
             if log.isEnabledFor(logging.INFO):
                 self.log(byteName, arguments, opoffset)
 

@@ -4,14 +4,6 @@ from . import vmtest
 
 
 class TestClasses(vmtest.VmTestCase):
-    def test_a(self):
-        self.assert_ok("""\
-            class Thing:
-                def __init__(self, x):
-                    self.x = x
-            ins = Thing(1)
-            """)
-
     def test_classes(self):
         self.assert_ok("""\
             class Thing(object):
