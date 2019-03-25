@@ -276,7 +276,7 @@ class VirtualMachine_instruction:
             x *= y
         elif op == 'MATRIX_MULTIPLY':
             x @= y
-        elif op in 'FLOOR_DIVIDE':
+        elif op == 'FLOOR_DIVIDE':
             x //= y
         elif op == 'TRUE_DIVIDE':
             x /= y

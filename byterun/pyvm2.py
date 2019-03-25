@@ -84,8 +84,7 @@ class VirtualMachine(VirtualMachine_instruction):
         self.push_frame(frame)
         while True:
             byteName, arguments, opoffset = self.parse_byte_and_args()
-            # print(self.frame.stack)
-            print(f'{opoffset:>2}, {byteName:<20}, {arguments}')
+            # print(f'{opoffset:>2}, {byteName:<20}, {arguments}')
             if log.isEnabledFor(logging.INFO):
                 self.log(byteName, arguments, opoffset)
 
