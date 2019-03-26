@@ -13,10 +13,10 @@ class VirtualMachine_instruction:
     def __init__(self):
         self.frames = []                # The call stack of frames.
         self.frame = None               # The current frame.
-        self.return_value = None
-        self.last_exception = None
+        self.return_value = None        # 在frame中传递的返回值
+        self.last_exception = None      # 上一个异常状态; (type, value, traceback)
 
-        self.EXTENDED_ARG_ext = 0
+        self.EXTENDED_ARG_ext = 0       # EXTENDED_ARG指令使用
 
     def top(self):
         """
@@ -89,6 +89,10 @@ class VirtualMachine_instruction:
         Manage a frame's block stack.
         Manipulate the block stack and data stack for looping,
         exception handling, or returning.
+
+        why:
+        continue;   break;  excption;   return
+        yield;  silenced;   reraise
         """
         assert why != 'yield'
 
@@ -696,31 +700,52 @@ class VirtualMachine_instruction:
             self.jump(jump)
 
     def byte_BREAK_LOOP(self):
+        """
+        Terminates a loop due to a break statement
+        """
         return 'break'
 
     def byte_CONTINUE_LOOP(self, dest):
-        # This is a trick with the return value.
-        # While unrolling blocks, continue and return both have to preserve
-        # state as the finally blocks are executed.  For continue, it's
-        # where to jump to, for return, it's the value to return.  It gets
-        # pushed on the stack for both, so continue puts the jump destination
-        # into return_value.
+        """
+        Continues a loop due to a continue statement.
+        target is the address to jump to (which should be a FOR_ITER instruction)
+
+        This is a trick with the return value.
+        While unrolling blocks, continue and return both have to preserve
+        state as the finally blocks are executed.  For continue, it's
+        where to jump to, for return, it's the value to return.  It gets
+        pushed on the stack for both, so continue puts the jump destination
+        into return_value.
+        """
         self.return_value = dest
         return 'continue'
 
     def byte_SETUP_EXCEPT(self, dest):
+        """
+        Pushes a try block from a try-except clause onto the block stack.
+        delta points to the first except block.
+        """
         self.push_block('setup-except', dest)
 
     def byte_SETUP_FINALLY(self, dest):
+        """
+        Pushes a try block from a try-except clause onto the block stack.
+        delta points to the finally block
+        """
         self.push_block('finally', dest)
 
     def byte_END_FINALLY(self):
+        """
+        Terminates a finally clause.
+        The interpreter recalls whether the exception has to be re-raised,
+        or whether the function returns, and continues with the outer-next block
+        """
         v = self.pop()
         if isinstance(v, str):
             why = v
             if why in ('return', 'continue'):
                 self.return_value = self.pop()
-            if why == 'silenced':       # PY3
+            if why == 'silenced':
                 block = self.pop_block()
                 assert block.type == 'except-handler'
                 self.unwind_block(block)
@@ -733,19 +758,26 @@ class VirtualMachine_instruction:
             tb = self.pop()
             self.last_exception = (exctype, val, tb)
             why = 'reraise'
-        else:       # pragma: no cover
+        else:
             raise VirtualMachineError("Confused END_FINALLY")
         return why
 
     def byte_POP_BLOCK(self):
+        """
+        Removes one block from the block stack.
+        Per frame, there is a stack of blocks,
+        denoting nested loops, try statements, and such
+        """
         self.pop_block()
 
-    # Raises an exception.
-    # argc indicates the number of arguments to the raise statement,
-    # ranging from 0 to 3.
-    # The handler will find the traceback as TOS2,
-    # the parameter as TOS1, and the exception as TOS.
     def byte_RAISE_VARARGS(self, argc):
+        """
+        Raises an exception.
+        argc indicates the number of arguments to the raise statement,
+        ranging from 0 to 3.
+        The handler will find the traceback as TOS2,
+        the parameter as TOS1, and the exception as TOS.
+        """
         cause = exc = None
         if argc == 2:
             cause = self.pop()
@@ -788,81 +820,102 @@ class VirtualMachine_instruction:
         return 'exception'
 
     def byte_POP_EXCEPT(self):
+        """
+        Removes one block from the block stack.
+        The popped block must be an exception handler block,
+        as implicitly created when entering an except handler.
+        In addition to popping extraneous values from the frame stack,
+        the last three popped values are used to restore the exception state
+        """
         block = self.pop_block()
         if block.type != 'except-handler':
             raise Exception("popped block is not an except handler")
         self.unwind_block(block)
 
+    ## with statement
+
     def byte_SETUP_WITH(self, dest):
+        """
+        This opcode performs several operations before a with block starts.
+
+        First      it loads __exit__() from the context manager and
+                    pushes it onto the stack for later use by WITH_CLEANUP.
+        Then       __enter__() is called, and a finally block pointing to delta is pushed.
+        Finally    the result of calling the enter method is pushed onto the stack.
+
+        The next opcode will either ignore it (POP_TOP), or store it in (a) variable(s)
+        (STORE_FAST, STORE_NAME, or UNPACK_SEQUENCE)
+        """
         ctxmgr = self.pop()
         self.push(ctxmgr.__exit__)
         ctxmgr_obj = ctxmgr.__enter__()
         self.push_block('finally', dest)
         self.push(ctxmgr_obj)
 
-    def byte_WITH_CLEANUP(self):
-        # The code here does some weird stack manipulation: the exit function
-        # is buried in the stack, and where depends on what's on top of it.
-        # Pull out the exit function, and leave the rest in place.
-        v = w = None
-        u = self.top()
-        if u is None:
-            exit_func = self.pop(1)
-        elif isinstance(u, str):
-            if u in ('return', 'continue'):
-                exit_func = self.pop(2)
-            else:
-                exit_func = self.pop(1)
-            u = None
-        elif issubclass(u, BaseException):
-            w, v, u = self.popn(3)
-            tp, exc, tb = self.popn(3)
-            exit_func = self.pop()
-            self.push(tp, exc, tb)
-            self.push(None)
-            self.push(w, v, u)
-            block = self.pop_block()
-            assert block.type == 'except-handler'
-            self.push_block(block.type, block.handler, block.level-1)
-        else:       # pragma: no cover
-            raise VirtualMachineError("Confused WITH_CLEANUP")
-        exit_ret = exit_func(u, v, w)
-        err = (u is not None) and bool(exit_ret)
-        if err:
-            # An error occurred, and was suppressed
-            self.push('silenced')
-
     def byte_WITH_CLEANUP_START(self):
-        u = self.top()
-        v = None
-        w = None
-        if u is None:
+        """(官方文档错误，摘抄至源码)
+        At the top of the stack are 1-6 values indicating
+       how/why we entered the finally clause:
+
+       1. TOP = None
+       2. (TOP, SECOND) = (WHY_{RETURN,CONTINUE}), retval
+       3. TOP = WHY_*; no retval below it
+       4. (TOP, SECOND, THIRD) = exc_info()
+          (FOURTH, FITH, SIXTH) = previous exception for EXCEPT_HANDLER
+
+       Below them is EXIT, the context.__exit__ bound method.
+
+       In the first three cases, call EXIT(None, None, None),
+       remove EXIT from the stack, leaving the rest in the same order.
+
+       In the fourth case, call EXIT(TOP, SECOND, THIRD)
+       we shift the bottom 3 values of the stack down,
+       and replace the empty spot with NULL.
+
+       In addition, if the stack represents an exception,
+       *and* the function call returns a 'true' value, we
+       push WHY_SILENCED onto the stack.  END_FINALLY will
+       then not re-raise the exception
+        """
+        tos = self.top()
+        top, second, third = None, None, None
+        if tos is None:
             exit_method = self.pop(1)
-        elif isinstance(u, str):
-            if u in {'return', 'continue'}:
+        elif isinstance(tos, str):
+            if tos in {'return', 'continue'}:
                 exit_method = self.pop(2)
             else:
                 exit_method = self.pop(1)
-        elif issubclass(u, BaseException):
-            w, v, u = self.popn(3)
-            tp, exc, tb = self.popn(3)
+        elif issubclass(tos, BaseException):
+            third, second, top = self.popn(3)
+            sixth, fifth, fourth = self.popn(3)
             exit_method = self.pop()
-            self.push(tp, exc, tb)
+            self.push(third, second, top)
             self.push(None)
-            self.push(w, v, u)
+            self.push(sixth, fifth, fourth)
             block = self.pop_block()
             assert block.type == 'except-handler'
             self.push_block(block.type, block.handler, block.level-1)
+        else:
+            raise Exception("WITH_CLEANUP_START error")
 
-        res = exit_method(u, v, w)
-        self.push(u)
+        res = exit_method(top, second, third)
+        self.push(tos)
         self.push(res)
 
     def byte_WITH_CLEANUP_FINISH(self):
+        """
+        Pops exception type and result of ‘exit’ function call from the stack.
+        If the stack represents an exception,
+        and the function call returns a ‘true’ value,
+        this information is “zapped” and replaced with a single
+        WHY_SILENCED to prevent END_FINALLY from re-raising the exception.
+        (But non-local gotos will still be resumed.)
+        """
         res = self.pop()
         u = self.pop()
         if type(u) is type and issubclass(u, BaseException) and res:
-                self.push("silenced")
+            self.push("silenced")
 
     ## Functions
 
@@ -1188,6 +1241,3 @@ def calculate_metaclass(metaclass, bases):
         elif not issubclass(winner, t):
             raise TypeError("metaclass conflict", winner, t)
     return winner
-
-
-

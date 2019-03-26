@@ -61,7 +61,9 @@ class VirtualMachine(VirtualMachine_instruction):
             self.frame = None
 
     def print_frames(self):
-        """Print the call stack, for debugging."""
+        """
+        Print the call stack, for debugging.
+        """
         for f in self.frames:
             filename = f.f_code.co_filename
             lineno = f.line_number()
@@ -78,7 +80,8 @@ class VirtualMachine(VirtualMachine_instruction):
         return val
 
     def run_frame(self, frame):
-        """Run a frame until it returns (somehow).
+        """
+        Run a frame until it returns (somehow).
         Exceptions are raised, the return value is returned.
         """
         self.push_frame(frame)
@@ -88,25 +91,19 @@ class VirtualMachine(VirtualMachine_instruction):
             if log.isEnabledFor(logging.INFO):
                 self.log(byteName, arguments, opoffset)
 
-            # When unwinding the block stack, we need to keep track of why we
-            # are doing it.
+            # When unwinding the block stack,
+            # we need to keep track of why we are doing it.
             why = self.dispatch(byteName, arguments)
             if why == 'exception':
-                # TODO: ceval calls PyTraceBack_Here, not sure what that does.
                 pass
-
             if why == 'reraise':
                 why = 'exception'
-
             if why != 'yield':
                 while why and frame.block_stack:
                     # Deal with any block management we need to do.
                     why = self.manage_block_stack(why)
-
             if why:
                 break
-
-        # TODO: handle generator exception state
 
         self.pop_frame()
 
@@ -157,9 +154,11 @@ class VirtualMachine(VirtualMachine_instruction):
         return arguments
 
     def parse_byte_and_args(self):
-        """ Parse bytecode into an instruction and optionally arguments
+        """
+        Parse bytecode into an instruction and optionally arguments
         3.6 uses two bytes for every instruction
-        instead of a mix of one and three byte instructions."""
+        instead of a mix of one and three byte instructions.
+        """
         f = self.frame
         opoffset = f.f_lasti                                    # 当前指令
         f.f_lasti += 2                                          # 下次指令在bytecode中的下标
@@ -173,8 +172,10 @@ class VirtualMachine(VirtualMachine_instruction):
         return byteName, arguments, opoffset
 
     def dispatch(self, byteName, arguments):
-        """ Dispatch by bytename to the corresponding methods.
-        Exceptions are caught and set on the virtual machine."""
+        """
+        Dispatch by bytename to the corresponding methods.
+        Exceptions are caught and set on the virtual machine.
+        """
         why = None
         try:
             if byteName.startswith('UNARY_'):
@@ -201,7 +202,9 @@ class VirtualMachine(VirtualMachine_instruction):
         return why
 
     def log(self, byteName, arguments, opoffset):
-        """ Log arguments, block stack, and data stack for each opcode."""
+        """
+        Log arguments, block stack, and data stack for each opcode.
+        """
         op = f"{opoffset}: {byteName}"
         if arguments:
             op += f" {arguments[0]}"

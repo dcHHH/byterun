@@ -5,6 +5,10 @@ import inspect
 import types
 
 
+# type      what kind of block this is;
+#           loop, setup-except, finally, except-handler
+# handler   where to jump to find handler;
+# level     value stack level to pop to;
 Block = collections.namedtuple("Block", "type, handler, level")
 
 
